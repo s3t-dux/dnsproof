@@ -1,0 +1,32 @@
+User / Admin
+(DNS Operator)
+     │
+     ▼
+DNSProof CLI/API  ◄────────────────────────────┐
+(open source)                                  │
+     │                                         │
+     ▼                                         │
+Change Signing (Ed25519 or KMS)                │
+     │                                         │
+     ▼                                         │
+DNSChangeLog (Verifiable Record)               │
+     │                                         │
+     ▼                                         │
+Zone File (Canonical JSON Format)              │
+     │                                         │
+     ▼                                         │
+CoreDNS / NSD                                  │
+(ns1 / ns2)                                    │
+     │                                         │
+     ├──────────────┐                          │
+     ▼              ▼                          │
+DNSSEC Signing   Zone Deployment API (HMAC) ───┘
+     │
+     ▼
+Public DNS
+
+Optional Layers:
+───────────────
+- Dashboard UI: Web interface for editing/viewing records
+- Audit Explorer UI: Public log viewer for DNSProof changes
+- Reproducibility Toolkit: Nix / Docker deploys, VM bootstrap

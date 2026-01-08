@@ -1,0 +1,9 @@
+{
+  "domain": "dnsproof.org",
+  "ns_ip": "136.115.36.6",
+  "records": [
+    { "type": "TXT", "name": "@", "value": "test2" },
+    { "type": "MX", "name": "@", "value": "mx1.stackdns.io", "priority": 10 }
+    
+  ]
+}

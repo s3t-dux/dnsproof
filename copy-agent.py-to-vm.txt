@@ -1,0 +1,24 @@
+Option 2: Bake the code into the script as a tarball (self-contained)
+
+Create a tarball from your local dnsagent refactor:
+
+tar -czf dnsagent.tar.gz agent.py dns_routes.py zone_manager.py config.py
+
+
+Then convert it to base64 for embedding:
+
+base64 dnsagent.tar.gz > dnsagent.tar.gz.b64
+
+
+Append this to the shell script:
+
+# Embedded DNSAgent archive
+cat <<EOF | base64 -d > /opt/dnsagent.tar.gz.b64
+<INSERT_CONTENT_HERE>
+EOF
+
+base64 -d /opt/dnsagent.tar.gz.b64 > /opt/dnsagent.tar.gz
+tar -xzf /opt/dnsagent.tar.gz -C /opt/dnsagent
+
+
+✳️ This makes your script fully portable — no external file transfer needed.
