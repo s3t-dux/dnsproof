@@ -1,5 +1,10 @@
 ### config.py
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+load_dotenv("/srv/dns/.env")
 
 ZONE_DIR = Path("/etc/coredns/zone")
 KEY_DIR = Path("/etc/coredns/keys")
+
+AGENT_SECRET = os.getenv("AGENT_SECRET")

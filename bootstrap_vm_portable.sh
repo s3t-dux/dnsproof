@@ -1,7 +1,28 @@
 #!/bin/bash
 set -e
 
+# Ensure AGENT_SECRET is provided
+if [ -z "$1" ]; then
+  echo "Usage: $0 <AGENT_SECRET>"
+  exit 1
+fi
+
+AGENT_SECRET="$1"
+ENV_FILE="/srv/dns/.env"
+
 echo "[BOOTSTRAP] Starting DNSProof VM bootstrap"
+
+# Create .env directory if not exists
+sudo mkdir -p /srv/dns
+
+# Save AGENT_SECRET to .env
+echo "AGENT_SECRET=$AGENT_SECRET" | sudo tee "$ENV_FILE" > /dev/null
+
+# Optional: Secure the .env file
+sudo chmod 600 "$ENV_FILE"
+sudo chown root:root "$ENV_FILE"
+
+echo ".env file created at $ENV_FILE"
 
 #----------------------------
 # OS + Package Manager Setup
@@ -193,7 +214,7 @@ setup_dnsaget() {
 
   # Upgrade pip and install requirements
   pip install --upgrade pip
-  pip install fastapi uvicorn[standard] aiofiles
+  pip install fastapi uvicorn[standard] aiofiles dnspython requests
 
   # Optional: drop your actual source files here
   echo "# Placeholder agent.py" > /srv/dns/agent.py

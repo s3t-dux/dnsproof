@@ -133,11 +133,10 @@ gcloud compute ssh $VMNAME --zone=$ZONE --command "
   sudo apt-get install -y dos2unix && \
   dos2unix bootstrap_vm_portable.sh && \
   chmod +x bootstrap_vm_portable.sh && \
-  sudo ./bootstrap_vm_portable.sh && \
+  sudo ./bootstrap_vm_portable.sh 'dEcartes2026' && \
   sudo mkdir -p /srv/dns && \
   sudo mv dnsproof/*.py /srv/dns/ && \
   sudo chown root:root /srv/dns/*.py && \
-  sudo systemctl restart dnsagent
+  sudo systemctl restart dnsagent && \
+  sudo rm -rf /tmp/dnsproof /tmp/bootstrap_vm_portable.sh /tmp/*.tar.gz
 "
-
-sudo rm -rf /tmp/dnsproof /tmp/bootstrap_vm_portable.sh /tmp/*.tar.gz
