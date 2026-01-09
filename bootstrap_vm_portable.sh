@@ -207,7 +207,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/srv/dns
-ExecStart=/srv/dns/venv/bin/uvicorn agent:app --host 0.0.0.0 --port 8000
+ExecStart=/srv/dns/venv/bin/python3 -m uvicorn agent:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=3
 
@@ -215,9 +215,17 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-  # Allow API port through UFW (optional if using GCP firewall)
-  echo "[INFO] Allowing port 8000 through UFW..."
-  sudo ufw allow 8000/tcp
+  # Allow API port (8000) through firewall
+  echo "[INFO] Allowing port 8000 through firewall..."
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw allow 8000/tcp
+  elif command -v firewall-cmd >/dev/null 2>&1; then
+    firewall-cmd --permanent --add-port=8000/tcp
+    firewall-cmd --reload
+  else
+    echo "[WARN] No firewall tool (ufw or firewalld) found. Skipping port 8000 rule."
+  fi
 
   # Enable service
   systemctl daemon-reexec
