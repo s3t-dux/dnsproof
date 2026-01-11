@@ -64,13 +64,16 @@ install_packages() {
 
   case "$PKG_MANAGER" in
     apt)
-      apt update && apt install -y python3 python3-venv curl git unzip ufw dnsutils
+      apt update && apt install -y \
+        python3 python3-venv curl git unzip \
+        ufw dnsutils ldnsutils
       ;;
-    yum)
-      yum install -y python3 python3-venv curl git unzip firewalld
-      ;;
+
     dnf)
-      dnf install -y python3 python3-devel curl git unzip firewalld bind-utils
+      dnf install -y \
+        python3 python3-devel curl git unzip \
+        firewalld bind-utils epel-release
+      dnf install -y ldns
       ;;
   esac
 }

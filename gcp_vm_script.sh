@@ -108,7 +108,7 @@ dig @$IPVM dnsproof.org MX +short
 VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=136.115.36.6
+IPVM=136.114.103.240
 
 tar czf dnsagent_bundle.tar.gz \
   bootstrap_vm_portable.sh \

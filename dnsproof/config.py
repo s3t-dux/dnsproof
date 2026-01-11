@@ -8,3 +8,5 @@ ZONE_DIR = Path("/etc/coredns/zone")
 KEY_DIR = Path("/etc/coredns/keys")
 
 AGENT_SECRET = os.getenv("AGENT_SECRET")
+#SERVER_NAME = os.getenv("SERVER_NAME")
+SERVER_NAME = "ns1"

@@ -2,7 +2,8 @@
 from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel
 from zone_manager import generate_zone_file, write_zone_file_to_disk, reload_coredns, sign_zone_with_dnssec
-from auth import verify_hmac, hmac_protected
+from dnssec import sign_dnssec
+from auth import hmac_protected
 
 router = APIRouter(prefix="/internal/dns")
 
@@ -14,8 +15,6 @@ class ZonePushRequest(BaseModel):
 @hmac_protected()
 async def push_zone(req: ZonePushRequest, request: Request):
 
-    #await verify_hmac(request, x_signature)
-
     try:
         zone_text = generate_zone_file(req.domain, req.records)
         write_zone_file_to_disk(req.domain, zone_text)
@@ -24,3 +23,8 @@ async def push_zone(req: ZonePushRequest, request: Request):
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/dnssec/sign/{domain}")
+@hmac_protected()
+async def sign_zone_internal(domain: str, request: Request):
+    return sign_dnssec(domain)
