@@ -1,9 +1,11 @@
 ### zone_manager.py
 
-from config import ZONE_DIR
+from config import ZONE_DIR, KEY_DIR
 from datetime import datetime
 import os
 from typing import List, Dict
+import subprocess
+import glob
 
 def generate_zone_file(domain: str, records: List[Dict]) -> str:
     """
@@ -82,45 +84,6 @@ def generate_zone_file(domain: str, records: List[Dict]) -> str:
 
     return "\n".join(zone_lines) + "\n"
 
-# legacy code
-'''
-def generate_zone_file(domain: str, records: list, ns_ip: str) -> str:
-    serial = datetime.utcnow().strftime("%Y%m%d01")
-    zone_lines = []
-
-    zone_lines.append(f"$ORIGIN {domain}.")
-    zone_lines.append("$TTL 3600")
-    zone_lines.append(
-        f"@ IN SOA ns1.{domain}. admin.{domain}. (\n"
-        f"    {serial} ; serial\n"
-        f"    7200       ; refresh\n"
-        f"    1800       ; retry\n"
-        f"    1209600    ; expire\n"
-        f"    3600 )     ; minimum"
-    )
-    zone_lines.append(f"@ IN NS ns1.{domain}.")
-    zone_lines.append(f"ns1 IN A {ns_ip}")
-
-    for record in records:
-        try:
-            name = record.get("name", "@")
-            rtype = record["type"].upper()
-            value = record["value"]
-            ttl = record.get("ttl", 3600)
-
-            if rtype == "MX":
-                priority = record.get("priority", 10)
-                zone_lines.append(f"{name} {ttl} IN MX {priority} {value}")
-
-            if rtype == "TXT":
-                value = f"\"{value}\""
-            zone_lines.append(f"{name} {ttl} IN {rtype} {value}")
-
-        except KeyError:
-            continue  # skip invalid records
-
-    return "\n".join(zone_lines)
-'''
 def write_zone_file_to_disk(domain: str, zone_text: str):
     ZONE_DIR.mkdir(parents=True, exist_ok=True)
     path = ZONE_DIR / f"{domain}.zone"
@@ -128,8 +91,63 @@ def write_zone_file_to_disk(domain: str, zone_text: str):
         f.write(zone_text)
 
 def sign_zone_with_dnssec(domain: str):
-    # This is placeholder logic
-    os.system(f"echo '[DNSSEC signing] {domain}'")
+    if KEY_DIR.exists() and any(KEY_DIR.glob("K*.key")):
+        print(f"[DEBUG] DNSSEC keys found, re-signing zone for {domain}")
+        try:
+            # Re-sign the zone after DNS update
+            perform_zone_signing(domain)
+            
+        except Exception as e:
+            print(f"[ERROR] DNSSEC re-signing failed for {domain}: {e}")
+            # Don't fail the entire deployment, just log the error
+
+def perform_zone_signing(domain: str):
+    try:
+        signed_zone, zone_file = sign_zone_with_keys(domain, KEY_DIR)
+
+        if not os.path.exists(signed_zone):
+            raise RuntimeError("Signed zone file was not created.")
+
+        # Overwrite the original zone with the signed one
+        os.replace(signed_zone, zone_file)
+
+        # Restart is done by the next function in the route.
+        # Restart CoreDNS to load the new zone
+        #subprocess.run(["systemctl", "restart", "coredns"], check=True)
+
+        print(f"[DEBUG] DNSSEC re-signing completed for {domain}")
+    except Exception as e:
+        print(f"[ERROR] DNSSEC re-signing failed for {domain}: {e}")
+        raise
+
+def sign_zone_with_keys(domain, key_dir):
+    """Sign the zone file using the DNSSEC keys"""
+    zone_file = f"/etc/coredns/zone/{domain}.zone"
+    if not os.path.exists(zone_file):
+        raise Exception(f"Zone file {zone_file} not found")
+    
+    # Find ZSK and KSK key files (without .key/.private extension)
+    key_files = glob.glob(os.path.join(key_dir, f"K{domain}.+008+*"))
+    key_names = []
+    
+    for key_file in key_files:
+        if key_file.endswith('.key'):
+            key_name = key_file[:-4]  # Remove .key extension
+            if key_name not in key_names:
+                key_names.append(key_name)
+    
+    if len(key_names) < 2:
+        raise Exception(f"Need both ZSK and KSK keys, found: {key_names}")
+    
+    # Sign the zone
+    signed_zone = f"{zone_file}.signed"
+    cmd = ["ldns-signzone", zone_file] + key_names
+    
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=key_dir)
+    if result.returncode != 0:
+        raise Exception(f"Zone signing failed: {result.stderr}")
+    
+    return signed_zone, zone_file
 
 def reload_coredns():
     os.system("systemctl restart coredns")

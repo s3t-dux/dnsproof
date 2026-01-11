@@ -140,3 +140,9 @@ gcloud compute ssh $VMNAME --zone=$ZONE --command "
   sudo systemctl restart dnsagent && \
   sudo rm -rf /tmp/dnsproof /tmp/bootstrap_vm_portable.sh /tmp/*.tar.gz
 "
+
+#-------------------------------------------------
+# DNSSEC check
+dig +dnssec dnsproof.org DS
+
+dig +dnssec @$IPVM dnsproof.org TXT

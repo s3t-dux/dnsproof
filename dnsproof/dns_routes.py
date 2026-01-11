@@ -2,8 +2,10 @@
 from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel
 from zone_manager import generate_zone_file, write_zone_file_to_disk, reload_coredns, sign_zone_with_dnssec
-from dnssec import sign_dnssec
+from dnssec import sign_dnssec, disable_dnssec
 from auth import hmac_protected
+from config import JSON_DIR
+import json
 
 router = APIRouter(prefix="/internal/dns")
 
@@ -14,6 +16,13 @@ class ZonePushRequest(BaseModel):
 @router.post("/push")
 @hmac_protected()
 async def push_zone(req: ZonePushRequest, request: Request):
+
+    data = await request.json()
+    # 1. Save JSON
+    JSON_DIR.mkdir(parents=True, exist_ok=True)
+    json_path = JSON_DIR / f"{req.domain}.json"
+    with open(json_path, "w") as f:
+        json.dump(data, f, indent=2)
 
     try:
         zone_text = generate_zone_file(req.domain, req.records)
@@ -28,3 +37,23 @@ async def push_zone(req: ZonePushRequest, request: Request):
 @hmac_protected()
 async def sign_zone_internal(domain: str, request: Request):
     return sign_dnssec(domain)
+
+@router.post("/dnssec/disable/{domain}")
+@hmac_protected()
+async def disable_dnssec_internal(domain: str, request: Request):
+    try:
+        disable_dnssec(domain)
+
+        JSON_DIR.mkdir(parents=True, exist_ok=True)
+        json_path = JSON_DIR / f"{domain}.json"
+
+        with open(json_path, 'r') as f:
+            json_file = json.load(f)
+            records = json_file['records']
+
+        zone_text = generate_zone_file(domain, records)
+        write_zone_file_to_disk(domain, zone_text)
+        reload_coredns()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

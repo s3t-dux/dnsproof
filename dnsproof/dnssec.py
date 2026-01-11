@@ -8,7 +8,7 @@ import dns.rdatatype
 import dns.rrset
 import glob
 import os
-
+import logging
 
 def sign_dnssec(domain: str):
     zone_file = Path(ZONE_DIR) / f"{domain}.zone"
@@ -78,6 +78,15 @@ def sign_dnssec(domain: str):
             status_code=500,
             detail=f"ldns-signzone failed: {e.stderr or e.stdout}"
         )
+    
+    try:
+        os.replace(signed_zone, zone_file)
+        subprocess.run(["systemctl", "restart", "coredns"], check=True)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"coredns restart failed: {e.stderr or e.stdout}"
+        )
 
     # Parse signed zone
     try:
@@ -119,3 +128,22 @@ def sign_dnssec(domain: str):
         "zsk_key_tag": zsk_key_tag,
         "zsk_algorithm": zsk_algorithm
     }
+
+def disable_dnssec(domain: str):
+    try:
+        logging.info(f"[disable DNSSEC] key_dir = {KEY_DIR}")
+        # Remove local keys
+        if os.path.exists(KEY_DIR):
+            import shutil
+            shutil.rmtree(KEY_DIR)
+            logging.info("[disable DNSSEC] DNSSEC keys removed from VM")
+
+        # remove the singed zone file
+        signed_zone = f"/etc/coredns/zone/{domain}.zone.signed"
+        if os.path.exists(signed_zone):
+            os.remove(signed_zone)
+        
+        return {"status": "disabled", "message": "DNSSEC disabled successfully"}
+        
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to disable DNSSEC: {e}"}
