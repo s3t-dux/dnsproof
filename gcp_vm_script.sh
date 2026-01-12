@@ -108,7 +108,7 @@ dig @$IPVM dnsproof.org MX +short
 VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=136.114.103.240
+IPVM=136.111.38.85
 
 tar czf dnsagent_bundle.tar.gz \
   bootstrap_vm_portable.sh \
@@ -133,7 +133,7 @@ gcloud compute ssh $VMNAME --zone=$ZONE --command "
   sudo apt-get install -y dos2unix && \
   dos2unix bootstrap_vm_portable.sh && \
   chmod +x bootstrap_vm_portable.sh && \
-  sudo ./bootstrap_vm_portable.sh 'dEcartes2026' && \
+  sudo ./bootstrap_vm_portable.sh 'dEcartes2026' ${IPVM} && \
   sudo mkdir -p /srv/dns && \
   sudo mv dnsproof/*.py /srv/dns/ && \
   sudo chown root:root /srv/dns/*.py && \

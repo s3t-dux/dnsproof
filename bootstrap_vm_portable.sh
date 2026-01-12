@@ -1,13 +1,14 @@
 #!/bin/bash
 set -e
 
-# Ensure AGENT_SECRET is provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 <AGENT_SECRET>"
+AGENT_SECRET="$1"
+NAMESERVER_IP="$2"
+
+if [ -z "$AGENT_SECRET" ] || [ -z "$NAMESERVER_IP" ]; then
+  echo "Usage: $0 <AGENT_SECRET> <NAMESERVER_IP>"
   exit 1
 fi
 
-AGENT_SECRET="$1"
 ENV_FILE="/srv/dns/.env"
 
 echo "[BOOTSTRAP] Starting DNSProof VM bootstrap"
@@ -180,7 +181,7 @@ EOF
         1209600    ; expire
         3600 )     ; minimum
     IN NS ns1.dnsproof.org.
-ns1 IN A 136.115.36.6
+ns1 IN A $NAMESERVER_IP
 @ IN TXT "test"
 EOF
 

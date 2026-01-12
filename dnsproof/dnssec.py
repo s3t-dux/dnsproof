@@ -67,7 +67,7 @@ def sign_dnssec(domain: str):
             detail=f"Key generation incomplete: keys={key_names}"
         )
 
-    # Now sign the zone
+    # Sign zone
     signed_zone = f"{zone_file}.signed"
     cmd = ["ldns-signzone", str(zone_file)] + key_names
 
@@ -78,21 +78,22 @@ def sign_dnssec(domain: str):
             status_code=500,
             detail=f"ldns-signzone failed: {e.stderr or e.stdout}"
         )
-    
+
+    # Parse signed zone BEFORE replacing
+    try:
+        z = dns.zone.from_file(signed_zone, origin=domain + ".")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse signed zone: {e}")
+
+    # Then replace and reload CoreDNS
     try:
         os.replace(signed_zone, zone_file)
         subprocess.run(["systemctl", "restart", "coredns"], check=True)
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"coredns restart failed: {e.stderr or e.stdout}"
+            detail=f"coredns restart failed: {e}"
         )
-
-    # Parse signed zone
-    try:
-        z = dns.zone.from_file(signed_zone, origin=domain + ".")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse signed zone: {e}")
 
     rrsig_records = []
     ds_records = []
