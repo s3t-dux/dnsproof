@@ -6,9 +6,11 @@ import dns.zone
 import dns.dnssec
 import dns.rdatatype
 import dns.rrset
+import dns.name
 import glob
 import os
 import logging
+from datetime import datetime
 
 def sign_dnssec(domain: str):
     zone_file = Path(ZONE_DIR) / f"{domain}.zone"
@@ -148,3 +150,76 @@ def disable_dnssec(domain: str):
         
     except Exception as e:
         return {"status": "error", "message": f"Failed to disable DNSSEC: {e}"}
+    
+def get_dnssec_status(domain: str):
+    zone_file = ZONE_DIR / f"{domain}.zone"
+    if not zone_file.exists():
+        raise HTTPException(status_code=404, detail="Zone file not found")
+
+    # Collect file creation timestamps
+    ksk_created_at = None
+    zsk_created_at = None
+
+    key_files = glob.glob(str(KEY_DIR / f"K{domain}.+008+*.key"))
+    for key_path in key_files:
+        created_at = datetime.fromtimestamp(os.path.getctime(key_path))
+        with open(key_path) as f:
+            full_line = f.readline().strip()
+            # Remove name and class prefix
+            if full_line.startswith(domain):
+                rdata_line = full_line.split("DNSKEY", 1)[1].strip()
+            else:
+                rdata_line = full_line  # fallback
+
+            # Remove comments
+            if ";" in rdata_line:
+                rdata_line = rdata_line.split(";")[0].strip()
+
+            try:
+                rdata = dns.rdata.from_text(
+                    dns.rdataclass.IN,
+                    dns.rdatatype.DNSKEY,
+                    rdata_line
+                )
+            except Exception as e:
+                print(f"Parse failed for {key_path}: {e}")
+                continue
+
+            if rdata.flags == 257:
+                ksk_created_at = created_at
+            elif rdata.flags == 256:
+                zsk_created_at = created_at
+                
+
+    # Read zone file for DS info
+    try:
+        z = dns.zone.from_file(str(zone_file), origin=domain + ".")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Zone parse failed: {e}")
+
+    ds_digest = None
+    key_tag = None
+    algorithm = None
+
+    for (name, node) in z.nodes.items():
+        for rdataset in node.rdatasets:
+            if rdataset.rdtype == dns.rdatatype.DNSKEY:
+                for rdata in rdataset:
+                    if rdata.flags == 256:  # ZSK
+                        ds = dns.dnssec.make_ds(name.concatenate(z.origin), rdata, 'SHA256')
+                        ds_digest = ds.digest.hex().upper()
+                        key_tag = dns.dnssec.key_id(rdata)
+                        algorithm = rdata.algorithm
+
+    return {
+        "signed_at": datetime.fromtimestamp(os.path.getctime(zone_file)),
+        "ksk_created_at": ksk_created_at,
+        "zsk_created_at": zsk_created_at,
+        "ds_digest": ds_digest,
+        "key_tag": key_tag,
+        "algorithm": algorithm,
+        "days_since_last_key_creation": (
+            (datetime.now() - max(filter(None, [ksk_created_at, zsk_created_at]))).days
+            if ksk_created_at or zsk_created_at else None
+        )
+    }

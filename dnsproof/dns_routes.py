@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel
 from zone_manager import generate_zone_file, write_zone_file_to_disk, reload_coredns, sign_zone_with_dnssec
-from dnssec import sign_dnssec, disable_dnssec
+from dnssec import sign_dnssec, disable_dnssec, get_dnssec_status
 from auth import hmac_protected
 from config import JSON_DIR
 import json
@@ -57,3 +57,8 @@ async def disable_dnssec_internal(domain: str, request: Request):
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/dnssec/status/{domain}")
+@hmac_protected()
+async def get_dnssec_status_route(domain: str, request: Request):
+    return get_dnssec_status(domain)
