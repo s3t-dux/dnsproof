@@ -261,6 +261,34 @@ EOF
   echo "[INFO] dnsagent installed and running"
 }
 
+setup_DNSSEC_cron() {
+  echo "[INFO] Setting up daily DNSSEC re-signing cron job..."
+  
+  CRON_JOB="*/15 * * * * /srv/dns/venv/bin/python /srv/dns/dnssec_resign_cron.py >> /var/log/dnssec_resign.log 2>&1"
+  CRONTAB_TMP=$(mktemp)
+
+  echo "[DEBUG] Ensuring log file exists..."
+  touch /var/log/dnssec_resign.log || { echo "[ERROR] Could not create log file"; return 1; }
+  chown root:root /var/log/dnssec_resign.log || { echo "[ERROR] Could not chown log file"; return 1; }
+
+  echo "[DEBUG] Reading current crontab into temp file: $CRONTAB_TMP"
+  crontab -l 2>/dev/null > "$CRONTAB_TMP" || true
+
+  echo "[DEBUG] Checking if cron job already exists..."
+  if grep -Fq "$CRON_JOB" "$CRONTAB_TMP"; then
+    echo "[INFO] Cron job already present. Skipping."
+  else
+    echo "[DEBUG] Appending new cron job:"
+    echo "$CRON_JOB"
+    echo "$CRON_JOB" >> "$CRONTAB_TMP"
+
+    echo "[DEBUG] Installing updated crontab..."
+    crontab "$CRONTAB_TMP" && echo "[INFO] Cron job installed." || echo "[ERROR] Failed to install crontab"
+  fi
+
+  rm "$CRONTAB_TMP"
+}
+
 #----------------------------
 # MAIN
 #----------------------------
@@ -271,5 +299,6 @@ configure_firewall
 fix_port53_conflict_and_hostname
 install_coredns
 setup_dnsaget
+setup_DNSSEC_cron
 
 echo "[BOOTSTRAP] VM ready. CoreDNS running. You can now push updated Corefiles and zones."

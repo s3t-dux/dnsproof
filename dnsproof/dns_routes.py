@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel
 from zone_manager import generate_zone_file, write_zone_file_to_disk, reload_coredns, sign_zone_with_dnssec
-from dnssec import sign_dnssec, disable_dnssec, get_dnssec_status, rotate_dnssec_key_pair
+from dnssec import sign_dnssec, disable_dnssec, get_dnssec_status, rotate_dnssec_key_pair, rotate_zsk_only
 from auth import hmac_protected
 from config import JSON_DIR
 import json
@@ -67,3 +67,8 @@ async def get_dnssec_status_route(domain: str, request: Request):
 @hmac_protected()
 async def rotate_dnssec_key_pair_route(domain: str, request: Request):
     return rotate_dnssec_key_pair(domain)
+
+@router.post("/dnssec/rotate/zsk/{domain}")
+@hmac_protected()
+async def rotate_zsk_only_route(domain: str, request: Request):
+    return rotate_zsk_only(domain)

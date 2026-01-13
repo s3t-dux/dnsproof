@@ -1,0 +1,1 @@
+sudo /bin/bash -c '/srv/dns/venv/bin/python /srv/dns/dnssec_resign_cron.py >> /var/log/dnssec_resign.log 2>&1'
