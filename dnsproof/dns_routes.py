@@ -2,10 +2,11 @@
 from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel
 from zone_manager import generate_zone_file, write_zone_file_to_disk, reload_coredns, sign_zone_with_dnssec
-from dnssec import sign_dnssec, disable_dnssec, get_dnssec_status, rotate_dnssec_key_pair, rotate_zsk_only
+from dnssec import sign_dnssec, disable_dnssec, get_dnssec_status, rotate_dnssec_key_pair, rotate_zsk_only, resign_zone_file
 from auth import hmac_protected
 from config import JSON_DIR
 import json
+import os
 
 router = APIRouter(prefix="/internal/dns")
 
@@ -72,3 +73,21 @@ async def rotate_dnssec_key_pair_route(domain: str, request: Request):
 @hmac_protected()
 async def rotate_zsk_only_route(domain: str, request: Request):
     return rotate_zsk_only(domain)
+
+@router.post("/dnssec/resign/{domain}")
+@hmac_protected()
+async def resign_zone_file_route(domain: str, request: Request):
+    return resign_zone_file(domain)
+
+@router.post("/dnssec/auto_resign/{state}")
+@hmac_protected()
+async def toggle_auto_resign(state: str, request: Request):
+    state = state.lower()
+    if state not in ["on", "off"]:
+        raise HTTPException(status_code=400, detail="State must be 'on' or 'off'")
+    
+    os.makedirs("/etc/dnsproof", exist_ok=True)
+    with open("/etc/dnsproof/auto_resign_enabled", "w") as f:
+        f.write("true" if state == "on" else "false")
+    
+    return {"auto_resign": state}

@@ -264,7 +264,7 @@ EOF
 setup_DNSSEC_cron() {
   echo "[INFO] Setting up daily DNSSEC re-signing cron job..."
   
-  CRON_JOB="*/15 * * * * /srv/dns/venv/bin/python /srv/dns/dnssec_resign_cron.py >> /var/log/dnssec_resign.log 2>&1"
+  CRON_JOB="0 3 * * * /srv/dns/venv/bin/python /srv/dns/dnssec_resign_cron.py >> /var/log/dnssec_resign.log 2>&1"
   CRONTAB_TMP=$(mktemp)
 
   echo "[DEBUG] Ensuring log file exists..."
@@ -287,6 +287,10 @@ setup_DNSSEC_cron() {
   fi
 
   rm "$CRONTAB_TMP"
+
+  # Ensure auto-resign config is initialized
+  mkdir -p /etc/dnsproof
+  echo "true" > /etc/dnsproof/auto_resign_enabled
 }
 
 #----------------------------

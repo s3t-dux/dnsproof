@@ -10,7 +10,7 @@ import dns.name
 import glob
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 def disable_dnssec(domain: str):
@@ -31,6 +31,33 @@ def disable_dnssec(domain: str):
         
     except Exception as e:
         return {"status": "error", "message": f"Failed to disable DNSSEC: {e}"}
+    
+def earliest_rrsig_expiry(zone_file, domain):
+    z = dns.zone.from_file(str(zone_file), origin=domain + ".", relativize=False)
+    expiries = []
+    for name, node in z.nodes.items():
+        for rdataset in node.rdatasets:
+            if rdataset.rdtype == dns.rdatatype.RRSIG:
+                for rdata in rdataset:
+                    val = rdata.expiration
+                    if isinstance(val, int):  # UNIX timestamp
+                        dt = datetime.fromtimestamp(val, timezone.utc)
+                    elif isinstance(val, str):
+                        dt = datetime.strptime(val, "%Y%m%d%H%M%S")
+                    elif isinstance(val, datetime):
+                        dt = val
+                    else:
+                        print(f"[WARN] Unknown timestamp type: {type(val)}: {val}")
+                        continue
+                    expiries.append(dt)
+    return min(expiries) if expiries else None
+
+def is_auto_resign_enabled():
+    try:
+        with open("/etc/dnsproof/auto_resign_enabled") as f:
+            return f.read().strip().lower() == "true"
+    except FileNotFoundError:
+        return True  # default to enabled if file missing
     
 def get_dnssec_status(domain: str):
     zone_file = ZONE_DIR / f"{domain}.zone"
@@ -93,6 +120,17 @@ def get_dnssec_status(domain: str):
                         key_tag = dns.dnssec.key_id(rdata)
                         algorithm = rdata.algorithm
 
+    days_before_rrsig_expiration = None
+    if ds_digest and key_tag and algorithm: # meaning DNSSEC is enabled
+        signed_path = ZONE_DIR / f"{domain}.zone"
+        try:
+            min_expiry = earliest_rrsig_expiry(signed_path, domain)
+            if min_expiry:
+                delta = min_expiry - datetime.now(tz=timezone.utc)
+                days_before_rrsig_expiration = round(delta.total_seconds() / 86400, 2)
+        except Exception as e:
+            print(f"[FAIL] Could not get remaining days until expiration {domain}: {e}")
+
     return {
         #"signed_at": datetime.fromtimestamp(os.path.getctime(zone_file)),
         "ksk_created_at": ksk_created_at,
@@ -103,7 +141,9 @@ def get_dnssec_status(domain: str):
         "days_since_last_key_creation": (
             (datetime.now() - max(filter(None, [ksk_created_at, zsk_created_at]))).days
             if ksk_created_at or zsk_created_at else None
-        )
+        ),
+        "days_before_rrsig_expiration": days_before_rrsig_expiration,
+        "auto_resign_enabled": is_auto_resign_enabled()
     }
 
 def delete_old_keys(domain: str):
@@ -276,3 +316,14 @@ def rotate_zsk_only(domain: str):
     result["zsk_created_at"] = zsk_created_at
 
     return result
+
+def resign_zone_file(domain: str):
+    z = sign_zone_with_keys(domain)
+    return {
+        "status": "resigned",
+        "rrsig_count": sum(
+            1 for name, node in z.nodes.items()
+            for rdataset in node.rdatasets
+            if rdataset.rdtype == dns.rdatatype.RRSIG
+        )
+    }
