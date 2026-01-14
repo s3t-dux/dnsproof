@@ -1,0 +1,2 @@
+AGENT_SECRET = "dEcartes2026"
+AGENT_IP = '35.184.117.108'

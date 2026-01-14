@@ -114,7 +114,7 @@ def get_dnssec_status(domain: str):
         for rdataset in node.rdatasets:
             if rdataset.rdtype == dns.rdatatype.DNSKEY:
                 for rdata in rdataset:
-                    if rdata.flags == 256:  # ZSK
+                    if rdata.flags == 257:  # KSK - relevant for registrar
                         ds = dns.dnssec.make_ds(name.concatenate(z.origin), rdata, 'SHA256')
                         ds_digest = ds.digest.hex().upper()
                         key_tag = dns.dnssec.key_id(rdata)
@@ -249,7 +249,7 @@ def parse_zone_for_signatures(z: dns.zone.Zone, domain: str) -> dict:
         "zsk_algorithm": zsk_algorithm,
     }
 
-def sign_dnssec(domain: str):
+def enable_dnssec(domain: str):
     created_keys = generate_dnssec_keys(domain, force=False)
     z = sign_zone_with_keys(domain)
     result = parse_zone_for_signatures(z, domain)

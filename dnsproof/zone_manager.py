@@ -151,3 +151,15 @@ def sign_zone_with_keys(domain, key_dir):
 
 def reload_coredns():
     os.system("systemctl restart coredns")
+
+def delete_zone_completely(domain: str):
+    zone_path = ZONE_DIR / f"{domain}.zone"
+    if zone_path.exists():
+        os.remove(zone_path)
+        print(f"[INFO] Deleted zone file: {zone_path}")
+    else:
+        raise FileNotFoundError(f"Zone file not found: {zone_path}")
+
+    # Reload CoreDNS to unload the deleted zone
+    subprocess.run(["systemctl", "restart", "coredns"], check=True)
+    print(f"[INFO] CoreDNS reloaded")

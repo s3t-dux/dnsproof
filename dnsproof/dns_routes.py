@@ -1,8 +1,8 @@
 # dns_routes.py (updated with ns_ip)
 from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel
-from zone_manager import generate_zone_file, write_zone_file_to_disk, reload_coredns, sign_zone_with_dnssec
-from dnssec import sign_dnssec, disable_dnssec, get_dnssec_status, rotate_dnssec_key_pair, rotate_zsk_only, resign_zone_file
+from zone_manager import generate_zone_file, write_zone_file_to_disk, reload_coredns, sign_zone_with_dnssec, delete_zone_completely
+from dnssec import enable_dnssec, disable_dnssec, get_dnssec_status, rotate_dnssec_key_pair, rotate_zsk_only, resign_zone_file
 from auth import hmac_protected
 from config import JSON_DIR
 import json
@@ -34,10 +34,10 @@ async def push_zone(req: ZonePushRequest, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/dnssec/sign/{domain}")
+@router.post("/dnssec/enable/{domain}")
 @hmac_protected()
-async def sign_zone_internal(domain: str, request: Request):
-    return sign_dnssec(domain)
+async def enable_zone_internal(domain: str, request: Request):
+    return enable_dnssec(domain)
 
 @router.post("/dnssec/disable/{domain}")
 @hmac_protected()
@@ -91,3 +91,14 @@ async def toggle_auto_resign(state: str, request: Request):
         f.write("true" if state == "on" else "false")
     
     return {"auto_resign": state}
+
+@router.delete("/delete/{domain}")
+@hmac_protected()
+async def delete_zone_completely_route(domain: str, request: Request):
+    try:
+        delete_zone_completely(domain)
+        return {"status": "zone deleted", "domain": domain}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete zone: {str(e)}")
