@@ -99,7 +99,7 @@ def get_dnssec_status(domain: str):
             elif rdata.flags == 256:
                 zsk_created_at = created_at
                 
-
+    '''
     # Read zone file for DS info
     try:
         z = dns.zone.from_file(str(zone_file), origin=domain + ".")
@@ -119,6 +119,23 @@ def get_dnssec_status(domain: str):
                         ds_digest = ds.digest.hex().upper()
                         key_tag = dns.dnssec.key_id(rdata)
                         algorithm = rdata.algorithm
+    '''
+
+    ds_files = sorted(glob.glob(f"/etc/coredns/keys/K{domain}.+008+*.ds"))
+    if not ds_files:
+        raise HTTPException(status_code=404, detail="No DS record found")
+
+    latest_ds = ds_files[-1]
+    with open(latest_ds, "r") as f:
+        line = f.read().strip()
+    
+    parts = line.split()
+    if len(parts) != 7:
+        raise HTTPException(status_code=500, detail="Malformed DS record")
+
+    ds_digest = parts[6]
+    key_tag = int(parts[3])
+    algorithm = int(parts[4])
 
     days_before_rrsig_expiration = None
     if ds_digest and key_tag and algorithm: # meaning DNSSEC is enabled
