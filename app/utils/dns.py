@@ -1,6 +1,8 @@
 import dns.message
 import dns.query
 import dns.rdatatype
+from dns.rdtypes.IN.A import A
+from dns.rdtypes.IN.AAAA import AAAA
 import random
 from config import NS1
 
@@ -82,12 +84,6 @@ def trace_ns(domain):
                             "depth": depth,
                             "trace_success": True
                         }
-                    '''
-                    if all(ns in all_targets for ns in EXPECTED_NS):
-                        return True
-                    else:
-                        return False
-                    '''
 
                 # Otherwise, follow delegation from authority section
                 authority_rrset = next((rr for rr in response.authority if rr.rdtype == dns.rdatatype.NS), None)
@@ -100,15 +96,97 @@ def trace_ns(domain):
                 # Resolve the IPs of the next NS servers using system resolver
                 for ns in next_ns_names:
                     try:
+                        # First try system resolver (common case)
                         ip = dns.resolver.resolve(ns, 'A')[0].to_text()
                         current_servers.append(ip)
-                    except Exception as e:
-                        print(f"❌ Failed to resolve {ns}: {e}")
-                break  # go to next depth level
+                    except Exception as e1:
+                        try:
+                            ip = dns.resolver.resolve(ns, 'AAAA')[0].to_text()
+                            current_servers.append(ip)
+                        except Exception as e2:
+                            # Try to get glue record from additional section
+                            glue_ip = None
+                            for rr in response.additional:
+                                rr_name = str(rr.name).rstrip('.').lower()
+                                ns_clean = ns.rstrip('.').lower()
+                                if rr.rdtype == dns.rdatatype.A and rr_name == ns_clean:
+                                    glue_ip = rr[0].address
+                                    break
+                                if rr.rdtype == dns.rdatatype.AAAA and rr_name == ns_clean:
+                                    glue_ip = rr[0].address
+                                    break
 
+                            if glue_ip:
+                                current_servers.append(glue_ip)
+                            else:
+                                print(f"❌ Could not resolve {ns}: {e1} / {e2}")
+                break  # go to next depth level
+                
+                
             except Exception as e:
                 print(f"❌ Query to {server} failed: {e}")
                 continue
 
         if not current_servers:
             raise Exception("No working NS servers found for next step.")
+
+def check_ns_propagation_status(domain: str, expected_ns: set):
+    """
+    Checks whether expected nameservers have propagated by performing a trace
+    from the root down to the domain.
+
+    Returns a structured propagation status report.
+    """
+    try:
+        trace_result = trace_ns(domain)
+        resolved_ns = trace_result.get("resolved_ns", [])
+        depth = trace_result.get("depth", None)
+        trace_success = trace_result.get("trace_success", False)
+
+        if not trace_success:
+            return {
+                "domain": domain,
+                "resolved_ns": resolved_ns,
+                "expected_ns": list(expected_ns),
+                "match": False,
+                "depth": depth,
+                "status": "trace_failed",
+                "explanation": "Could not complete DNS trace to domain"
+            }
+
+        normalized_resolved = {ns.strip('.').lower() for ns in resolved_ns}
+        normalized_expected = {ns.strip('.').lower() for ns in expected_ns}
+
+        if normalized_expected.issubset(normalized_resolved):
+            status = "fully_propagated"
+            explanation = "All expected nameservers found in final NS record"
+            match = True
+        elif normalized_resolved & normalized_expected:
+            status = "partially_propagated"
+            explanation = "Some expected nameservers found, still propagating"
+            match = False
+        else:
+            status = "not_propagated"
+            explanation = "None of the expected nameservers found"
+            match = False
+
+        return {
+            "domain": domain,
+            "resolved_ns": sorted(resolved_ns),
+            "expected_ns": sorted(expected_ns),
+            "match": match,
+            "depth": depth,
+            "status": status,
+            "explanation": explanation
+        }
+
+    except Exception as e:
+        return {
+            "domain": domain,
+            "resolved_ns": [],
+            "expected_ns": sorted(expected_ns),
+            "match": False,
+            "depth": None,
+            "status": "error",
+            "explanation": f"Error occurred during NS propagation check: {str(e)}"
+        }

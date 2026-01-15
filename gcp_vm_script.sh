@@ -108,11 +108,9 @@ dig @$IPVM dnsproof.org MX +short
 VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=34.28.131.69
-
-tar czf dnsagent_bundle.tar.gz \
-  bootstrap_vm_portable.sh \
-  dnsproof/*.py
+IPVM=34.123.114.4
+DOMAIN=dnsproof.org
+NS_NAME=ns1.dnsproof.org
 
 gcloud compute instances create $VMNAME \
   --zone=$ZONE \
@@ -124,6 +122,10 @@ gcloud compute instances create $VMNAME \
   --boot-disk-size=10GB \
   --scopes=compute-rw
 
+tar czf dnsagent_bundle.tar.gz \
+  bootstrap_vm_portable.sh \
+  dnsproof/*.py
+  
 gcloud compute scp dnsagent_bundle.tar.gz $VMNAME:/tmp/ --zone=$ZONE
 
 gcloud compute ssh $VMNAME --zone=$ZONE --command "
@@ -133,7 +135,7 @@ gcloud compute ssh $VMNAME --zone=$ZONE --command "
   sudo apt-get install -y dos2unix && \
   dos2unix bootstrap_vm_portable.sh && \
   chmod +x bootstrap_vm_portable.sh && \
-  sudo ./bootstrap_vm_portable.sh 'dEcartes2026' ${IPVM} && \
+  sudo ./bootstrap_vm_portable.sh 'dEcartes2026' ${IPVM} ${DOMAIN} ${NS_NAME} && \
   sudo mkdir -p /srv/dns && \
   sudo mv dnsproof/*.py /srv/dns/ && \
   sudo chown root:root /srv/dns/*.py && \

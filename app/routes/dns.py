@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from utils.agents import call_agent_hmac_async
-from utils.dns import query_ns_direct
-from config import AGENT_IP
+from utils.dns import query_ns_direct, check_ns_propagation_status
+from config import AGENT_IP, NS1
 
 router = APIRouter()
 
@@ -15,6 +15,10 @@ async def verify_ns_route(domain: str, request: Request):
         raise HTTPException(status_code=400, detail="Missing agent_ip")
 
     return query_ns_direct(AGENT_IP, domain)
+
+@router.get("/ns_propagation_status/{domain}")
+async def ns_propagation_status_route(domain: str):
+    return check_ns_propagation_status(domain, {NS1})
 
 @router.post("/push")
 async def push_zone(request: Request):

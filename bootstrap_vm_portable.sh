@@ -3,9 +3,12 @@ set -e
 
 AGENT_SECRET="$1"
 NAMESERVER_IP="$2"
+DOMAIN="$3"
+NS_NAME="$4"
 
-if [ -z "$AGENT_SECRET" ] || [ -z "$NAMESERVER_IP" ]; then
-  echo "Usage: $0 <AGENT_SECRET> <NAMESERVER_IP>"
+if [ -z "$AGENT_SECRET" ] || [ -z "$NAMESERVER_IP" ] || [ -z "$DOMAIN" ] || [ -z "$NS_NAME" ]; then
+  echo "Usage: $0 AGENT_SECRET IP DOMAIN NS_NAME"
+  echo "Example: $0 supersecretkey 1.2.3.4 dnsproof.org ns1.dnsproof.org"
   exit 1
 fi
 
@@ -164,8 +167,8 @@ install_coredns() {
   # Create default Corefile
   mkdir -p /etc/coredns/zone
   cat > /etc/coredns/Corefile <<EOF
-dnsproof.org {
-    file /etc/coredns/zone/dnsproof.org.zone
+$DOMAIN {
+    file /etc/coredns/zone/$DOMAIN.zone
     log
     errors
 }
@@ -174,7 +177,7 @@ EOF
   # Create dnsproof zone file
   cat > /etc/coredns/zone/dnsproof.org.zone <<EOF
 \$ORIGIN dnsproof.org.
-@   3600 IN SOA ns1.dnsproof.org. admin.dnsproof.org. (
+@   3600 IN SOA $NS_NAME. admin.$DOMAIN. (
         2026010101 ; serial
         7200       ; refresh
         1800       ; retry

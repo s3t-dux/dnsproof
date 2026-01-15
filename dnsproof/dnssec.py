@@ -123,7 +123,20 @@ def get_dnssec_status(domain: str):
 
     ds_files = sorted(glob.glob(f"/etc/coredns/keys/K{domain}.+008+*.ds"))
     if not ds_files:
-        raise HTTPException(status_code=404, detail="No DS record found")
+        #raise HTTPException(status_code=404, detail="No DS record found")
+        return {
+            #"signed_at": datetime.fromtimestamp(os.path.getctime(zone_file)),
+            "ksk_created_at": None,
+            "zsk_created_at": None,
+            "ds_digest": None,
+            "digest_type": None,
+            "key_tag": None,
+            "algorithm": None,
+            "days_since_last_key_creation": None,
+            "days_before_rrsig_expiration": None,
+            "auto_resign_enabled": None,
+            "note": "DS record not found on the nameserver"
+        }
 
     latest_ds = ds_files[-1]
     with open(latest_ds, "r") as f:
