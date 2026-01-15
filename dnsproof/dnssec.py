@@ -136,6 +136,7 @@ def get_dnssec_status(domain: str):
     ds_digest = parts[6]
     key_tag = int(parts[3])
     algorithm = int(parts[4])
+    digest_type = int(parts[5])
 
     days_before_rrsig_expiration = None
     if ds_digest and key_tag and algorithm: # meaning DNSSEC is enabled
@@ -153,6 +154,7 @@ def get_dnssec_status(domain: str):
         "ksk_created_at": ksk_created_at,
         "zsk_created_at": zsk_created_at,
         "ds_digest": ds_digest,
+        "digest_type": digest_type,
         "key_tag": key_tag,
         "algorithm": algorithm,
         "days_since_last_key_creation": (
