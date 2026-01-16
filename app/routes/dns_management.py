@@ -6,8 +6,6 @@ from fastapi import APIRouter, HTTPException, Request
 from utils.zone_json import add_record, edit_record, delete_record, load_zone_json
 from config import AGENT_IP
 
-from config import AGENT_IP
-
 router = APIRouter()
 
 class DNSRecord(BaseModel):
@@ -21,7 +19,7 @@ class DNSRecord(BaseModel):
 
 class AddRecordRequest(BaseModel):
     domain: str
-    record: DNSRecord
+    records: list[DNSRecord]
 
 @router.post("/push")
 async def push_zone(request: Request):
@@ -63,62 +61,115 @@ async def delete_zone(domain: str, request: Request):
 @router.post("/records")
 async def add_dns_record(req: AddRecordRequest):
     domain = req.domain
-    record = req.record.dict()
+    new_records = req.records
 
+    added = []
+    errors = []
+
+    for rec in new_records:
+        try:
+            add_record(domain, rec.dict())
+            added.append(rec)
+        except ValueError as ve:
+            errors.append({"record": rec, "error": str(ve)})
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
+    # After all adds, push to agent
+    zone_json = load_zone_json(domain)
     try:
-        add_record(domain, record)
-
-        zone_json = load_zone_json(domain)
         await call_agent_hmac_async(
             ip=AGENT_IP,
             path="/internal/dns/push",
             json=zone_json
         )
-
-        return {"status": "success", "message": "Record added and zone deployed."}
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to add DNS record: {e}")
+        raise HTTPException(status_code=500, detail=f"Zone updated locally but failed to push to agent: {e}")
 
-@router.put("/records/{record_id}")
-async def edit_dns_record(req: AddRecordRequest, record_id: str):
+    return {
+        "status": "success",
+        "added_count": len(added),
+        "skipped": errors
+    }
+
+class EditRecordItem(BaseModel):
+    record_id: str
+    record: DNSRecord
+
+class EditRecordsRequest(BaseModel):
+    domain: str
+    edits: list[EditRecordItem]
+
+@router.put("/records")
+async def edit_dns_records(req: EditRecordsRequest):
     domain = req.domain
-    record = req.record.dict()
+    edits = req.edits
 
+    updated = []
+    errors = []
+
+    for item in edits:
+        try:
+            edit_record(domain, item.record_id, item.record.dict())
+            updated.append(item.record_id)
+        except ValueError as ve:
+            errors.append({"record_id": item.record_id, "error": str(ve)})
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
+    # Push final updated zone
+    zone_json = load_zone_json(domain)
     try:
-        edit_record(domain, record_id, record)
-
-        zone_json = load_zone_json(domain)
         await call_agent_hmac_async(
             ip=AGENT_IP,
             path="/internal/dns/push",
             json=zone_json
         )
-
-        return {"status": "success", "message": "Record updated and zone deployed."}
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update DNS record: {e}")
+        raise HTTPException(status_code=500, detail=f"Zone updated locally but failed to push to agent: {e}")
 
-@router.delete("/records/{record_id}")
-async def delete_dns_record(domain: str, record_id: str):
+    return {
+        "status": "success",
+        "updated_count": len(updated),
+        "updated_ids": updated,
+        "skipped": errors
+    }
+
+class DeleteRecordsRequest(BaseModel):
+    domain: str
+    record_ids: list[str]
+
+@router.delete("/records")
+async def delete_dns_records(req: DeleteRecordsRequest):
+    domain = req.domain
+    ids = req.record_ids
+
+    deleted = []
+    errors = []
+
+    for record_id in ids:
+        try:
+            delete_record(domain, record_id)
+            deleted.append(record_id)
+        except ValueError as ve:
+            errors.append({"record_id": record_id, "error": str(ve)})
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
+    # Push zone only once
+    zone_json = load_zone_json(domain)
     try:
-        delete_record(domain, record_id)
-
-        zone_json = load_zone_json(domain)
         await call_agent_hmac_async(
             ip=AGENT_IP,
             path="/internal/dns/push",
             json=zone_json
         )
-
-        return {"status": "success", "message": "Record deleted and zone deployed."}
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete DNS record: {e}")
+        raise HTTPException(status_code=500, detail=f"Zone updated locally but failed to push to agent: {e}")
+
+    return {
+        "status": "success",
+        "deleted_count": len(deleted),
+        "deleted_ids": deleted,
+        "skipped": errors
+    }

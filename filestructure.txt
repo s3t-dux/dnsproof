@@ -14,7 +14,8 @@ app/
 │   └── └── dnssec_management.py 
 │   │       
 │   ├── utils/
-│   │   ├── agents.py            
+│   │   ├── agents.py
+│   │   ├── zone_json.py              
 │   │   └── dns.py
 │   │       
 │   ├── json/

@@ -31,27 +31,54 @@ curl -X POST http://localhost:8000/api/dns/records \
   -H "Content-Type: application/json" \
   -d '{
     "domain": "dnsproof.org",
-    "record": {
+    "records": [{
       "type": "TXT",
       "name": "@",
-      "value": "test-adding",
+      "value": "test-adding1",
       "ttl": 3600
-    }
+    },
+    {
+      "type": "TXT",
+      "name": "@",
+      "value": "test-adding2",
+      "ttl": 3600
+    }]
   }'
 
 # edit
-curl -X PUT "http://localhost:8000/api/dns/records/8e41158f02120df39a77c4328489c60d64ced88045fa1df0289577e6f4f9fb20" \
+curl -X PUT "http://localhost:8000/api/dns/records" \
   -H "Content-Type: application/json" \
   -d '{
     "domain": "dnsproof.org",
-    "record": {
-      "type": "TXT",
-      "name": "@",
-      "value": "test-edited",
-      "ttl": 3600
-    }
+    "edits" :[
+      {
+        "record_id": "b1a81447340f4832c7b3fe7438c78ee9c8b8f7baa2587441acefbe61cd9a8d19",
+        "record": {
+          "type": "TXT",
+          "name": "@",
+          "value": "test-edited1",
+          "ttl": 3600
+        }
+      },
+      {
+        "record_id": "0e1ed1ba1747caa4ec36ff1393b8c18ae6b01288e1e9e0f8d0257cbe37af8f58",
+        "record": {
+          "type": "TXT",
+          "name": "@",
+          "value": "test-edited2",
+          "ttl": 3600
+        }
+      }
+    ]
   }'
 
 # delete
-curl -X DELETE "http://localhost:8000/api/dns/records/3ea200f692b42835a2492f36e6df9958f010825d3732ab642f5236da41e19354?domain=dnsproof.org" \
-  -H "Content-Type: application/json" 
+curl -X DELETE http://localhost:8000/api/dns/records \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "dnsproof.org",
+    "record_ids": [
+      "64b0867248ea31875a44468acc755af15d9dc1049f9284f21a91c375bcc670ca",
+      "8e5af955f49712d9a4a26925be3082be15fc41243b01aa3084ac0ec44c80b2bb"
+    ]
+  }'

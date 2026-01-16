@@ -108,7 +108,7 @@ dig @$IPVM dnsproof.org MX +short
 VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=34.132.119.18
+IPVM=34.28.110.48
 DOMAIN=dnsproof.org
 NS_NAME=ns1.dnsproof.org
 
