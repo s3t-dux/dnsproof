@@ -1,0 +1,31 @@
+dnsproof/
+├── agent.py
+├── auth.py
+├── config.py
+├── dns_routes.py
+├── dnssec.py
+├── dnssec_resign_cron.py
+└── zone_manager.py
+
+app/
+│   ├── routes/
+│   │   ├── ns_management.py
+│   │   ├── dns_management.py
+│   └── └── dnssec_management.py 
+│   │       
+│   ├── utils/
+│   │   ├── agents.py            
+│   │   └── dns.py
+│   │       
+│   ├── json/
+│   │   └── dnsproof.org.json
+│   │       
+│   ├── config.py
+└── └── main
+
+bootstrap_vm_portabl.sh
+
+NOTE: 
+dnsproof is the directory that contains the internal FastAPI on the nameserver VM. It communicates with the app backend.
+app is the directory that builds the frontend app. routes, utils, config.py and main.py are the files for the app backend.
+bootstrap_vm_portabl.sh is the shell script that provisions nameservers.

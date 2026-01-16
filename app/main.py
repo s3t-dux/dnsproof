@@ -1,13 +1,11 @@
 from fastapi import FastAPI
-from routes import dns, dnssec
+from routes import ns_management, dns_management, dnssec_management
 
 app = FastAPI(title="DNSProof App Backend")
 
-# Include DNS routes
-app.include_router(dns.router, prefix="/api/dns", tags=["DNS"])
-
-# Include DNSSEC routes
-app.include_router(dnssec.router, prefix="/api/dnssec", tags=["DNSSEC"])
+app.include_router(ns_management.router, prefix="/api/ns", tags=["NS"])
+app.include_router(dns_management.router, prefix="/api/dns", tags=["DNS"])
+app.include_router(dnssec_management.router, prefix="/api/dnssec", tags=["DNSSEC"])
 
 @app.get("/")
 async def root():
