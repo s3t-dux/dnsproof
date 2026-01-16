@@ -1,6 +1,5 @@
 {
   "domain": "dnsproof.org",
-  "ns_ip": "136.115.36.6",
   "records": [
     {
       "type": "SOA",
