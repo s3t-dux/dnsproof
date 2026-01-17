@@ -27,6 +27,20 @@ curl -X GET http://localhost:8000/api/ns/ns_propagation_status/dnsproof.org
 
 # DNS management
 # add
+# single record
+curl -X POST http://localhost:8000/api/dns/records \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "dnsproof.org",
+    "records": [{
+      "type": "TXT",
+      "name": "@",
+      "value": "test-adding1",
+      "ttl": 3600
+    }]
+  }'
+
+# multiple records
 curl -X POST http://localhost:8000/api/dns/records \
   -H "Content-Type: application/json" \
   -d '{
@@ -82,3 +96,6 @@ curl -X DELETE http://localhost:8000/api/dns/records \
       "8e5af955f49712d9a4a26925be3082be15fc41243b01aa3084ac0ec44c80b2bb"
     ]
   }'
+
+# log
+curl -X GET http://localhost:8000/api/logs

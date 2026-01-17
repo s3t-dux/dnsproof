@@ -105,10 +105,14 @@ dig @$IPVM dnsproof.org MX +short
 
 #-------------------------------------------------
 # Bootstrap startup with Debian
+
+gcloud compute addresses create dns-ip \
+  --region=us-central1 
+
 VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=34.28.110.48
+IPVM=35.193.201.64
 DOMAIN=dnsproof.org
 NS_NAME=ns1.dnsproof.org
 
