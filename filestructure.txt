@@ -34,6 +34,7 @@ app/
 └── └── main
 
 bootstrap_vm_portabl.sh
+dns_config.yaml
 
 NOTE: 
 dnsproof is the directory that contains the internal FastAPI on the nameserver VM. It communicates with the app backend.

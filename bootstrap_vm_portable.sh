@@ -1,10 +1,17 @@
 #!/bin/bash
 set -e
 
-AGENT_SECRET="$1"
-NAMESERVER_IP="$2"
-DOMAIN="$3"
-NS_NAME="$4"
+#AGENT_SECRET="$1"
+#NAMESERVER_IP="$2"
+#DOMAIN="$3"
+#NS_NAME="$4"
+
+CONFIG_FILE=$1
+
+AGENT_SECRET=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['agent_secret'])" "$CONFIG_FILE")
+NAMESERVER_IP=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['nameserver_ip'])" "$CONFIG_FILE")
+DOMAIN=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['domain'])" "$CONFIG_FILE")
+NS_NAME=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['ns_name'])" "$CONFIG_FILE")
 
 if [ -z "$AGENT_SECRET" ] || [ -z "$NAMESERVER_IP" ] || [ -z "$DOMAIN" ] || [ -z "$NS_NAME" ]; then
   echo "Usage: $0 AGENT_SECRET IP DOMAIN NS_NAME"

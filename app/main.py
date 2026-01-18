@@ -8,6 +8,10 @@ app = FastAPI(title="DNSProof App Backend")
 init_db() # Automatically create sqlite db if missing
 ensure_signing_key_exists()  # Automatically creates and logs key if missing
 
+from config import AGENT_IP
+print(f"[STARTUP] AGENT_IP resolved as: {AGENT_IP}")
+
+
 app.include_router(ns_management.router, prefix="/api/ns", tags=["NS"])
 app.include_router(dns_management.router, prefix="/api/dns", tags=["DNS"])
 app.include_router(dnssec_management.router, prefix="/api/dnssec", tags=["DNSSEC"])

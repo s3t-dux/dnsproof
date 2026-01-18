@@ -6,3 +6,4 @@ sqlmodel[asyncio]
 asyncpg
 dnspython
 nacl-middleware
+pyyaml

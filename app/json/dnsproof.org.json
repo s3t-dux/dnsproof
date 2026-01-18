@@ -32,6 +32,12 @@
       "name": "@",
       "value": "mx2.stackdns.io",
       "priority": 20
+    },
+    {
+      "type": "TXT",
+      "name": "@",
+      "value": "test-adding1",
+      "ttl": 3600
     }
   ]
 }

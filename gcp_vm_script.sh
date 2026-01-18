@@ -112,7 +112,7 @@ gcloud compute addresses create dns-ip \
 VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=35.193.201.64
+IPVM=34.29.125.89
 DOMAIN=dnsproof.org
 NS_NAME=ns1.dnsproof.org
 
@@ -128,10 +128,28 @@ gcloud compute instances create $VMNAME \
 
 tar czf dnsagent_bundle.tar.gz \
   bootstrap_vm_portable.sh \
+  dns_config.yaml \
   dnsproof/*.py
   
 gcloud compute scp dnsagent_bundle.tar.gz $VMNAME:/tmp/ --zone=$ZONE
 
+gcloud compute ssh "$VMNAME" --zone="$ZONE" --command "
+  cd /tmp && \
+  tar xzf dnsagent_bundle.tar.gz && \
+  sudo apt-get update && \
+  sudo apt-get install -y dos2unix && \
+  dos2unix bootstrap_vm_portable.sh && \
+  chmod +x bootstrap_vm_portable.sh && \
+  sudo ./bootstrap_vm_portable.sh dns_config.yaml && \
+  sudo mkdir -p /srv/dns && \
+  sudo mv dnsproof/*.py /srv/dns/ && \
+  sudo chown root:root /srv/dns/*.py && \
+  sudo systemctl restart dnsagent && \
+  sudo rm -f bootstrap_vm_portable.sh dnsagent_bundle.tar.gz
+"
+
+#----------------------------------------------------------
+# legacy code only for reference
 gcloud compute ssh $VMNAME --zone=$ZONE --command "
   cd /tmp && \
   tar xzf dnsagent_bundle.tar.gz && \
