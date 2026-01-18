@@ -99,3 +99,6 @@ curl -X DELETE http://localhost:8000/api/dns/records \
 
 # log
 curl -X GET http://localhost:8000/api/logs
+
+# key ratation
+curl -X POST https://localhost:8000/api/signing/rotate

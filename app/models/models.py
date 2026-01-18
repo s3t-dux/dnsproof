@@ -29,3 +29,16 @@ class DNSChangeLog(SQLModel, table=True):
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+class KeyGenerationLog(SQLModel, table=True):
+    __tablename__ = "key_generation_log"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    key_type: str  # "dns_record", "dnssec", etc.
+    purpose: Optional[str] = None
+    public_key: str
+    key_path: Optional[str] = None
+    fingerprint: Optional[str] = None
+    revoked: Optional[bool] = False
+    replaced_by: Optional[str] = None  # id of new key if rotated

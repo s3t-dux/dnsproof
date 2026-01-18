@@ -11,15 +11,22 @@ app/
 │   ├── routes/
 │   │   ├── ns_management.py
 │   │   ├── dns_management.py
-│   └── └── dnssec_management.py 
+│   │   ├── dnssec_management.py
+│   └── └── logs.py 
 │   │       
 │   ├── utils/
 │   │   ├── agents.py
+│   │   ├── attestation.py
+│   │   ├── cryptographic_signing.py
+│   │   ├── db.py
 │   │   ├── zone_json.py              
 │   │   └── dns.py
 │   │       
 │   ├── json/
 │   │   └── dnsproof.org.json
+│   │    
+│   ├── models/
+│   │   ├── models.py
 │   │       
 │   ├── config.py
 └── └── main
