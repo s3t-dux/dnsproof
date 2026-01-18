@@ -20,6 +20,7 @@ AGENT_SECRET = str(DNS_CONFIG.get("agent_secret", "")).strip()
 AGENT_IP = str(DNS_CONFIG.get("nameserver_ip", "127.0.0.1")).strip()
 DOMAIN = DNS_CONFIG.get("domain", "example.com")
 NS1 = DNS_CONFIG.get("ns_name", "ns1.example.com")
+PASSWORD = DNS_CONFIG.get("password", "").strip()
 
 # Other static paths
 DB_PATH = BASE_DIR / "dnsproof.db"

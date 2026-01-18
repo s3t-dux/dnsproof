@@ -99,6 +99,7 @@ curl -X DELETE http://localhost:8000/api/dns/records \
 
 # log
 curl -X GET http://localhost:8000/api/logs
+curl -H "Authorization: Bearer shiro123" http://localhost:8000/api/logs
 
 # key ratation
 curl -X POST http://localhost:8000/api/signing/rotate
