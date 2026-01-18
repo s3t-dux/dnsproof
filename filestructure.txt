@@ -12,13 +12,15 @@ app/
 │   │   ├── ns_management.py
 │   │   ├── dns_management.py
 │   │   ├── dnssec_management.py
-│   └── └── logs.py 
+│   │   ├── logs.py
+│   └── └── signing_management.py 
 │   │       
 │   ├── utils/
 │   │   ├── agents.py
 │   │   ├── attestation.py
 │   │   ├── cryptographic_signing.py
 │   │   ├── db.py
+│   │   ├── dnssec_logging.py
 │   │   ├── zone_json.py              
 │   │   └── dns.py
 │   │       

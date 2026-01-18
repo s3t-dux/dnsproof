@@ -7,8 +7,17 @@ import dns.message
 import dns.query
 import dns.rdatatype
 from utils.dns import trace_ns, query_ns_direct
+from utils.dnssec_logging import log_dnssec
 
 router = APIRouter()
+
+SUCCESS_STATES = {
+    "signed_unpublished",
+    "signed",
+    "rotated_signed_unpublished",
+    "zsk_rotated_signed",
+    "disabled"
+}
 
 # Enable DNSSEC (generate keys and return DS record)
 @router.post("/enable/{domain}")
@@ -20,7 +29,11 @@ async def enable_dnssec(domain: str):
         ip=AGENT_IP,
         path=f"/internal/dns/dnssec/enable/{domain}"
     )
-    return response.json()
+    data = response.json()
+    if data.get("status") in SUCCESS_STATES:
+        log_dnssec(domain, action="enable", dnssec_meta=data)
+
+    return data
 
 # Disable DNSSEC
 @router.post("/disable/{domain}")
@@ -32,7 +45,11 @@ async def disable_dnssec(domain: str):
         ip=AGENT_IP,
         path=f"/internal/dns/dnssec/disable/{domain}"
     )
-    return response.json()
+    data = response.json()
+    if data.get("status") in SUCCESS_STATES:
+        log_dnssec(domain, action="disable", dnssec_meta=data)
+
+    return data
 
 # Trigger re-signing (e.g. via cron or manual)
 @router.post("/resign/{domain}")
@@ -67,7 +84,11 @@ async def rotate_dnssec_keys(domain: str):
         ip=AGENT_IP,
         path=f"/internal/dns/dnssec/rotate/{domain}"
     )
-    return response.json()
+    data = response.json()
+    if data.get("status") in SUCCESS_STATES:
+        log_dnssec(domain, action="rotate", dnssec_meta=data)
+
+    return data
 
 @router.post("/rotate/zsk/{domain}")
 async def rotate_dnssec_zsk(domain: str):
@@ -78,7 +99,11 @@ async def rotate_dnssec_zsk(domain: str):
         ip=AGENT_IP,
         path=f"/internal/dns/dnssec/rotate/zsk/{domain}"
     )
-    return response.json()
+    data = response.json()
+    if data.get("status") in SUCCESS_STATES:
+        log_dnssec(domain, action="rotate_zsk", dnssec_meta=data)
+
+    return data
 
 @router.post("/resign/{domain}")
 async def resign_zone_dnssec(domain: str):

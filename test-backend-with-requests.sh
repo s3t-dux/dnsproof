@@ -101,4 +101,7 @@ curl -X DELETE http://localhost:8000/api/dns/records \
 curl -X GET http://localhost:8000/api/logs
 
 # key ratation
-curl -X POST https://localhost:8000/api/signing/rotate
+curl -X POST http://localhost:8000/api/signing/rotate
+
+# key list
+curl -X GET http://localhost:8000/api/signing/keys

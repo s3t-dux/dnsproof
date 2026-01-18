@@ -42,3 +42,21 @@ class KeyGenerationLog(SQLModel, table=True):
     fingerprint: Optional[str] = None
     revoked: Optional[bool] = False
     replaced_by: Optional[str] = None  # id of new key if rotated
+
+class DNSSECLog(SQLModel, table=True):
+    __tablename__ = "dnssec_log"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True)
+
+    domain: str = Field(index=True)
+    action: str  # 'enable', 'disable', 'rotate_zsk', 'rotate_all'
+
+    # Metadata
+    key_tag: Optional[int] = None
+    algorithm: Optional[int] = None
+    ds_digest: Optional[str] = None
+    ds_digest_type: Optional[int] = None
+
+    ip_address: Optional[str] = None
+    user_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
