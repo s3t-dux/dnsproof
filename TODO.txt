@@ -2,3 +2,18 @@
 1. cron job for re-sign a zone file when DNSSEC is enabled.
 2. Take care of SERVER_NAME in config.py for DNSSEC
 3. Change AGENT_SECRET
+
+# CLI
+✅ Next Steps (Optional Enhancements):
+
+Auto-lookup record_id during edit by type + name (as discussed)
+
+Add dnssec rotate, resign, etc.
+
+Add --json output format
+
+CLI command to fetch & dump zone JSON file
+
+Build a package: dnp as installed console command
+
+Let me know when you're ready for any of these — or want the pyproject.toml to register dnp as a global CLI.

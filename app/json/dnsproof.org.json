@@ -19,7 +19,8 @@
     {
       "type": "TXT",
       "name": "@",
-      "value": "test2"
+      "value": "test0",
+      "ttl": 3600
     },
     {
       "type": "MX",

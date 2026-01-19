@@ -112,7 +112,7 @@ gcloud compute addresses create dns-ip \
 VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=34.29.125.89
+IPVM=136.119.69.233
 DOMAIN=dnsproof.org
 NS_NAME=ns1.dnsproof.org
 

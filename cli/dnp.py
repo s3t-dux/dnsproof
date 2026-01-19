@@ -9,6 +9,13 @@ HEADERS = {
     "Authorization": f"Bearer {API_PASSWORD}"
 } if API_PASSWORD else {}
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1] / "app"))
+
+from config import JSON_DIR
+from utils.zone_json import load_zone_json, generate_record_id
+
 @click.group()
 def cli():
     """dnp: DNSProof CLI"""
@@ -52,27 +59,53 @@ def list(domain):
 
 @cli.command()
 @click.option('--domain', required=True)
-@click.option('--record-id', required=True)
-@click.option('--value', required=True)
-def edit(domain, record_id, value):
-    "Edit a DNS record (value only)"
-    # In production, you should fetch current record from the zone file
-    # For now, just update value only and keep others constant (mocked)
-    record = {
-        "type": "A",  # should be dynamic
-        "name": "www", # should be dynamic
-        "value": value,
-        "ttl": 3600
-    }
-    payload = {
-        "domain": domain,
-        "edits": [{
-            "record_id": record_id,
-            "record": record
-        }]
-    }
-    r = httpx.put(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
-    click.echo(r.json())
+@click.option('--type', 'rtype', required=True)
+@click.option('--old-name', required=True)
+@click.option('--old-value', required=True)
+@click.option('--new-name', required=True)
+@click.option('--new-value', required=True)
+@click.option('--new-ttl', type=int, default=None)
+def edit(domain, rtype, old_name, old_value, new_name, new_value, new_ttl):
+    "Edit a DNS record (lookup by old type+name+value, update name/value/ttl)"
+    try:
+        zone_data = load_zone_json(domain)
+        records = zone_data.get("records", [])
+        candidates = [r for r in records if r["type"] == rtype and r["name"] == old_name and r["value"] == old_value]
+
+        if len(candidates) == 0:
+            click.echo("No matching record found.")
+            return
+        elif len(candidates) > 1:
+            click.echo("Multiple matching records found. Please refine.")
+            for r in candidates:
+                click.echo(f"Value: {r['value']} | TTL: {r.get('ttl', 3600)}")
+            return
+
+        # Generate record ID via backend, or use consistent hash logic (simplified here)
+        from utils.zone_json import generate_record_id
+        record_id = generate_record_id(candidates[0])
+
+        updated_record = {
+            "type": rtype,
+            "name": new_name,
+            "value": new_value,
+        }
+        if new_ttl is not None:
+            updated_record["ttl"] = new_ttl
+
+        payload = {
+            "domain": domain,
+            "edits": [{
+                "record_id": record_id,
+                "record": updated_record
+            }]
+        }
+
+        r = httpx.put(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+        click.echo(r.json())
+
+    except Exception as e:
+        click.echo(f"Error: {e}")
 
 
 @cli.command()
