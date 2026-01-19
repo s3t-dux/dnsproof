@@ -25,10 +25,10 @@ def generate_zone_file(domain: str, records: List[Dict]) -> str:
         ttl = record.get("ttl", 3600)
 
         # Normalize record name
-        if record_name == "@":
-            record_name = domain + "."
-        elif not record_name.endswith("."):
-            record_name = record_name + "."
+        #if record_name == "@":
+        #    record_name = domain + "."
+        #elif not record_name.endswith("."):
+        #    record_name = record_name + "."
 
         # Record-specific formatting
         if record_type == "TXT":
@@ -107,7 +107,17 @@ def perform_zone_signing(domain: str):
 
         if not os.path.exists(signed_zone):
             raise RuntimeError("Signed zone file was not created.")
+        
+        # ldns-signzone fully expands the zone file. SO this is not necessary
+        '''
+        # Patch signed file with $ORIGIN and $TTL
+        with open(signed_zone, "r") as f:
+            lines = f.readlines()
 
+        with open(signed_zone, "w") as f:
+            f.write(f"$ORIGIN {domain}.\n$TTL 3600\n")  # You can extract TTL from record if needed
+            f.writelines(lines)
+        '''
         # Overwrite the original zone with the signed one
         os.replace(signed_zone, zone_file)
 

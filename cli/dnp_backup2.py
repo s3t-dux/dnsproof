@@ -74,59 +74,36 @@ def list(as_json, domain):
     except Exception as e:
         click.echo(f"Error: {e}")
 
-@cli.command()
-@click.option('--type', 'rtype', required=True, help='Record type (e.g., A, TXT, MX)')
-@click.option('--name', required=True, help='Record name (e.g., @, www)')
-@click.option('--value', required=True, help='Record value (e.g., 1.2.3.4, \"hello\")')
-def record_id(rtype, name, value):
-    """Compute the record_id for a given type+name+value"""
-    try:
-        record = {
-            "type": rtype,
-            "name": name,
-            "value": value
-        }
-        rid = generate_record_id(record)
-        click.echo(rid)
-    except Exception as e:
-        click.echo(f"Error: {e}")
 
 @cli.command()
 @json_option()
 @click.option('--domain', required=True)
-@click.option('--record-id', required=False)
-@click.option('--type', 'rtype', required=False)
-@click.option('--old-name', required=False)
-@click.option('--old-value', required=False)
+@click.option('--type', 'rtype', required=True)
+@click.option('--old-name', required=True)
+@click.option('--old-value', required=True)
 @click.option('--new-name', required=True)
 @click.option('--new-value', required=True)
 @click.option('--new-ttl', type=int, default=None)
-def edit(as_json, domain, record_id, rtype, old_name, old_value, new_name, new_value, new_ttl):
-    """Edit a DNS record using record-id OR type+old-name+old-value"""
+def edit(as_json, domain, rtype, old_name, old_value, new_name, new_value, new_ttl):
+    "Edit a DNS record (lookup by old type+name+value, update name/value/ttl)"
     try:
-        if record_id:
-            computed_id = record_id
-        else:
-            if not (rtype and old_name and old_value):
-                raise click.UsageError("Either --record-id OR all of --type, --old-name, and --old-value must be provided.")
+        zone_data = load_zone_json(domain)
+        records = zone_data.get("records", [])
+        candidates = [r for r in records if r["type"] == rtype and r["name"] == old_name and r["value"] == old_value]
 
-            zone_data = load_zone_json(domain)
-            records = zone_data.get("records", [])
-            candidates = [r for r in records if r["type"] == rtype and r["name"] == old_name and r["value"] == old_value]
+        if len(candidates) == 0:
+            click.echo("No matching record found.")
+            return
+        elif len(candidates) > 1:
+            click.echo("Multiple matching records found. Please refine.")
+            for r in candidates:
+                click.echo(f"Value: {r['value']} | TTL: {r.get('ttl', 3600)}")
+            return
 
-            if len(candidates) == 0:
-                click.echo("No matching record found.")
-                return
-            elif len(candidates) > 1:
-                click.echo("Multiple matching records found. Please refine.")
-                for r in candidates:
-                    click.echo(f"Value: {r['value']} | TTL: {r.get('ttl', 3600)}")
-                return
-
-            computed_id = generate_record_id(candidates[0])
+        record_id = generate_record_id(candidates[0])
 
         updated_record = {
-            "type": rtype if rtype else candidates[0]['type'],
+            "type": rtype,
             "name": new_name,
             "value": new_value,
         }
@@ -136,7 +113,7 @@ def edit(as_json, domain, record_id, rtype, old_name, old_value, new_name, new_v
         payload = {
             "domain": domain,
             "edits": [{
-                "record_id": computed_id,
+                "record_id": record_id,
                 "record": updated_record
             }]
         }
@@ -147,46 +124,20 @@ def edit(as_json, domain, record_id, rtype, old_name, old_value, new_name, new_v
     except Exception as e:
         click.echo(f"Error: {e}")
 
+
 @cli.command()
 @json_option()
 @click.option('--domain', required=True)
-@click.option('--record-id', required=False)
-@click.option('--type', 'rtype', required=False)
-@click.option('--name', required=False)
-@click.option('--value', required=False)
-def delete(as_json, domain, record_id, rtype, name, value):
-    "Delete a DNS record by record_id or type+name+value"
-    try:
-        if record_id:
-            record_ids = [record_id]
-        else:
-            if not (rtype and name and value):
-                raise click.UsageError("Either --record-id or all of --type, --name, and --value must be provided.")
+@click.option('--record-id', required=True)
+def delete(as_json, domain, record_id):
+    "Delete a DNS record"
+    payload = {
+        "domain": domain,
+        "record_ids": [record_id]
+    }
+    r = httpx.request("DELETE", f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+    print_output(r, as_json)
 
-            zone_data = load_zone_json(domain)
-            records = zone_data.get("records", [])
-            match = [r for r in records if r["type"] == rtype and r["name"] == name and r["value"] == value]
-
-            if not match:
-                click.echo("No matching record found.")
-                return
-            if len(match) > 1:
-                click.echo("Multiple matching records found. Please refine your query.")
-                for r in match:
-                    click.echo(json.dumps(r, indent=2))
-                return
-
-            record_ids = [generate_record_id(match[0])]
-
-        payload = {
-            "domain": domain,
-            "record_ids": record_ids
-        }
-        r = httpx.request("DELETE", f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
-        print_output(r, as_json)
-
-    except Exception as e:
-        click.echo(f"Error: {e}")
 
 @cli.command()
 @json_option()

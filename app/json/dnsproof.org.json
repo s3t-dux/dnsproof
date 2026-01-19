@@ -19,7 +19,7 @@
     {
       "type": "TXT",
       "name": "@",
-      "value": "test0",
+      "value": "test1",
       "ttl": 3600
     },
     {
@@ -38,6 +38,12 @@
       "type": "TXT",
       "name": "@",
       "value": "test-adding1",
+      "ttl": 3600
+    },
+    {
+      "type": "TXT",
+      "name": "mytest",
+      "value": "world",
       "ttl": 3600
     }
   ]
