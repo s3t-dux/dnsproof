@@ -25,7 +25,7 @@ python dnp.py logs
 
 python dnp.py edit --domain dnsproof.org --type TXT --old-name @ --old-value test0 --new-name @ --new-value test1
 
-python dnp.py delete --domain dnsproof.org --type TXT --name mytest2 --value world
+python dnp.py delete --domain dnsproof.org --type TXT --name mytest --value world
 
 python dnp.py dnssec-auto-resign on
 python dnp.py dnssec-auto-resign off
