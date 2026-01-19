@@ -6,11 +6,13 @@
 # CLI
 ✅ Next Steps (Optional Enhancements):
 
-Auto-lookup record_id during edit by type + name (as discussed)
+Done. Auto-lookup record_id during edit by type + name (as discussed)
 
-Add dnssec rotate, resign, etc.
+Done. Add dnssec rotate, resign, etc.
 
-Add --json output format
+Add record_id endpoint and update "delete" and "edit" to take either values or record_id
+
+Done. Add --json output format
 
 CLI command to fetch & dump zone JSON file
 

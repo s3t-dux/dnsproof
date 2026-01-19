@@ -24,3 +24,11 @@ python dnp.py add --domain dnsproof.org --type TXT --name hello --value world
 python dnp.py logs
 
 python dnp.py edit --domain dnsproof.org --type TXT --old-name @ --old-value test2 --new-name @ --new-value test0
+
+python dnp.py dnssec-auto-resign on
+python dnp.py dnssec-auto-resign off
+
+# --json/ -j output examples
+dnp -j dnssec-status --domain dnsproof.org
+dnp dnssec-status --domain dnsproof.org --json
+dnp dnssec-status --domain dnsproof.org -j

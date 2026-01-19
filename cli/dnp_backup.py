@@ -1,7 +1,6 @@
 import click
 import os
 import httpx
-import json
 
 API_URL = os.getenv("DNSPROOF_API_URL", "http://localhost:8000")
 API_PASSWORD = os.getenv("DNSPROOF_PASSWORD", "")
@@ -17,18 +16,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "app"))
 from config import JSON_DIR
 from utils.zone_json import load_zone_json, generate_record_id
 
-
-def json_option():
-    return click.option("--json", "-j", "as_json", is_flag=True, help="Output raw JSON")
-
-
-def print_output(response, as_json):
-    if as_json:
-        click.echo(json.dumps(response.json(), indent=2))
-    else:
-        click.echo(response.json())
-
-
 @click.group()
 def cli():
     """dnp: DNSProof CLI"""
@@ -36,13 +23,12 @@ def cli():
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
 @click.option('--type', 'rtype', required=True)
 @click.option('--name', required=True)
 @click.option('--value', required=True)
 @click.option('--ttl', default=3600, show_default=True)
-def add(as_json, domain, rtype, name, value, ttl):
+def add(domain, rtype, name, value, ttl):
     "Add a DNS record"
     payload = {
         "domain": domain,
@@ -54,29 +40,24 @@ def add(as_json, domain, rtype, name, value, ttl):
         }]
     }
     r = httpx.post(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
-def list(as_json, domain):
+def list(domain):
     "List DNS records (raw JSON output)"
     try:
         r = httpx.get(f"{API_URL}/api/logs?limit=100", headers=HEADERS)
-        if as_json:
-            print_output(r, as_json)
-        else:
-            records = r.json()
-            domain_records = [rec for rec in records if rec['domain'] == domain]
-            for rec in domain_records:
-                click.echo(f"{rec['record_type']} {rec['record_name']} {rec['record_value']} (id={rec['id']})")
+        records = r.json()
+        domain_records = [rec for rec in records if rec['domain'] == domain]
+        for rec in domain_records:
+            click.echo(f"{rec['record_type']} {rec['record_name']} {rec['record_value']} (id={rec['id']})")
     except Exception as e:
         click.echo(f"Error: {e}")
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
 @click.option('--type', 'rtype', required=True)
 @click.option('--old-name', required=True)
@@ -84,7 +65,7 @@ def list(as_json, domain):
 @click.option('--new-name', required=True)
 @click.option('--new-value', required=True)
 @click.option('--new-ttl', type=int, default=None)
-def edit(as_json, domain, rtype, old_name, old_value, new_name, new_value, new_ttl):
+def edit(domain, rtype, old_name, old_value, new_name, new_value, new_ttl):
     "Edit a DNS record (lookup by old type+name+value, update name/value/ttl)"
     try:
         zone_data = load_zone_json(domain)
@@ -119,100 +100,88 @@ def edit(as_json, domain, rtype, old_name, old_value, new_name, new_value, new_t
         }
 
         r = httpx.put(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
-        print_output(r, as_json)
+        click.echo(r.json())
 
     except Exception as e:
         click.echo(f"Error: {e}")
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
 @click.option('--record-id', required=True)
-def delete(as_json, domain, record_id):
+def delete(domain, record_id):
     "Delete a DNS record"
     payload = {
         "domain": domain,
         "record_ids": [record_id]
     }
     r = httpx.request("DELETE", f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
-def dnssec_status(as_json, domain):
+def dnssec_status(domain):
     "Check DNSSEC status for a domain"
     r = httpx.get(f"{API_URL}/api/dnssec/status/{domain}", headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
-def dnssec_enable(as_json, domain):
+def dnssec_enable(domain):
     "Enable DNSSEC for a domain"
     r = httpx.post(f"{API_URL}/api/dnssec/enable/{domain}", headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
-def dnssec_disable(as_json, domain):
+def dnssec_disable(domain):
     "Disable DNSSEC for a domain"
     r = httpx.post(f"{API_URL}/api/dnssec/disable/{domain}", headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
-def dnssec_rotate(as_json, domain):
+def dnssec_rotate(domain):
     "Rotate DNSSEC keys for a domain"
     r = httpx.post(f"{API_URL}/api/dnssec/rotate/{domain}", headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
-def dnssec_rotate_zsk(as_json, domain):
+def dnssec_rotate_zsk(domain):
     "Rotate DNSSEC ZSK for a domain"
     r = httpx.post(f"{API_URL}/api/dnssec/rotate/zsk/{domain}", headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--domain', required=True)
-def dnssec_resign(as_json, domain):
+def dnssec_resign(domain):
     "Re-sign the DNS zone for a domain"
     r = httpx.post(f"{API_URL}/api/dnssec/resign/{domain}", headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.argument('state', type=click.Choice(['on', 'off']))
-def dnssec_auto_resign(as_json, state):
+def dnssec_auto_resign(state):
     "Toggle automatic DNSSEC re-signing (on/off)"
     r = httpx.post(f"{API_URL}/api/dnssec/auto_resign/{state}", headers=HEADERS)
-    print_output(r, as_json)
+    click.echo(r.json())
 
 
 @cli.command()
-@json_option()
 @click.option('--limit', default=10, show_default=True)
-def logs(as_json, limit):
+def logs(limit):
     "View recent DNS change logs"
     r = httpx.get(f"{API_URL}/api/logs?limit={limit}", headers=HEADERS)
-    if as_json:
-        print_output(r, as_json)
-    else:
-        for entry in r.json():
-            click.echo(f"{entry['created_at']} | {entry['action']} {entry['record_type']} {entry['record_name']} -> {entry['record_value']}")
+    for entry in r.json():
+        click.echo(f"{entry['created_at']} | {entry['action']} {entry['record_type']} {entry['record_name']} -> {entry['record_value']}")
 
 
 if __name__ == '__main__':
