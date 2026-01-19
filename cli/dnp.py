@@ -17,6 +17,25 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "app"))
 from config import JSON_DIR
 from utils.zone_json import load_zone_json, generate_record_id
 
+def api_call(method, *args, **kwargs):
+    """
+    Wrapper for all HTTP requests in DNSProof CLI.
+    Supports all httpx methods (get, post, request, etc.).
+    Gracefully handles 401, network errors, etc.
+    """
+    try:
+        r = method(*args, **kwargs)
+        r.raise_for_status()
+        return r
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            click.echo("[ERROR] Unauthorized: Please set DNSPROOF_PASSWORD or check your credentials.")
+        else:
+            click.echo(f"[ERROR] HTTP error {e.response.status_code}: {e.response.text}")
+        raise click.Abort()
+    except httpx.RequestError as e:
+        click.echo(f"[ERROR] Network error: {e}")
+        raise click.Abort()
 
 def json_option():
     return click.option("--json", "-j", "as_json", is_flag=True, help="Output raw JSON")
@@ -53,7 +72,8 @@ def add(as_json, domain, rtype, name, value, ttl):
             "ttl": ttl
         }]
     }
-    r = httpx.post(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+    #r = httpx.post(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+    r = api_call(httpx.post, f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -63,7 +83,8 @@ def add(as_json, domain, rtype, name, value, ttl):
 def list(as_json, domain):
     "List DNS records (raw JSON output)"
     try:
-        r = httpx.get(f"{API_URL}/api/logs?limit=100", headers=HEADERS)
+        #r = httpx.get(f"{API_URL}/api/logs?limit=100", headers=HEADERS)
+        r = api_call(httpx.get, f"{API_URL}/api/logs?limit=100", headers=HEADERS)
         if as_json:
             print_output(r, as_json)
         else:
@@ -141,7 +162,8 @@ def edit(as_json, domain, record_id, rtype, old_name, old_value, new_name, new_v
             }]
         }
 
-        r = httpx.put(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+        #r = httpx.put(f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+        r = api_call(httpx.put, f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
         print_output(r, as_json)
 
     except Exception as e:
@@ -182,9 +204,52 @@ def delete(as_json, domain, record_id, rtype, name, value):
             "domain": domain,
             "record_ids": record_ids
         }
-        r = httpx.request("DELETE", f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+        #r = httpx.request("DELETE", f"{API_URL}/api/dns/records", json=payload, headers=HEADERS)
+        r = api_call(
+            httpx.request,
+            "DELETE",
+            f"{API_URL}/api/dns/records",
+            json=payload,
+            headers=HEADERS
+        )
         print_output(r, as_json)
 
+    except Exception as e:
+        click.echo(f"Error: {e}")
+
+@cli.command()
+@click.option('--domain', required=True)
+@click.option('--output', type=click.Path(writable=True), default=None, help="Output file path. Defaults to stdout")
+def dump_zone(domain, output):
+    """Fetch and dump the zone JSON file from local disk"""
+    try:
+        zone_json = load_zone_json(domain)
+        if output:
+            with open(output, "w") as f:
+                json.dump(zone_json, f, indent=2)
+            click.echo(f"Zone JSON for '{domain}' written to {output}")
+        else:
+            click.echo(json.dumps(zone_json, indent=2))
+    except Exception as e:
+        click.echo(f"Error: {e}")
+
+
+@cli.command()
+@click.option('--domain', required=True)
+@click.option('--yes', is_flag=True, help="Bypass confirmation prompt")
+@json_option()
+def push_zone(as_json, domain, yes):
+    """Send the local zone JSON to the API /agent for DNS deployment"""
+    if not yes:
+        click.echo("Warning: This zone push bypasses DNS change log and cryptographic signing.")
+        if not click.confirm("Are you sure you want to push this zone?"):
+            click.echo("Aborted.")
+            return
+    try:
+        zone_json = load_zone_json(domain)
+        #r = httpx.post(f"{API_URL}/api/dns/push", json=zone_json, headers=HEADERS)
+        r = api_call(httpx.post, f"{API_URL}/api/dns/push", json=zone_json, headers=HEADERS)
+        print_output(r, as_json)
     except Exception as e:
         click.echo(f"Error: {e}")
 
@@ -193,7 +258,8 @@ def delete(as_json, domain, record_id, rtype, name, value):
 @click.option('--domain', required=True)
 def dnssec_status(as_json, domain):
     "Check DNSSEC status for a domain"
-    r = httpx.get(f"{API_URL}/api/dnssec/status/{domain}", headers=HEADERS)
+    #r = httpx.get(f"{API_URL}/api/dnssec/status/{domain}", headers=HEADERS)
+    r = api_call(httpx.get, f"{API_URL}/api/dnssec/status/{domain}", headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -202,7 +268,8 @@ def dnssec_status(as_json, domain):
 @click.option('--domain', required=True)
 def dnssec_enable(as_json, domain):
     "Enable DNSSEC for a domain"
-    r = httpx.post(f"{API_URL}/api/dnssec/enable/{domain}", headers=HEADERS)
+    #r = httpx.post(f"{API_URL}/api/dnssec/enable/{domain}", headers=HEADERS)
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/enable/{domain}", headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -211,7 +278,8 @@ def dnssec_enable(as_json, domain):
 @click.option('--domain', required=True)
 def dnssec_disable(as_json, domain):
     "Disable DNSSEC for a domain"
-    r = httpx.post(f"{API_URL}/api/dnssec/disable/{domain}", headers=HEADERS)
+    #r = httpx.post(f"{API_URL}/api/dnssec/disable/{domain}", headers=HEADERS)
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/disable/{domain}", headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -220,7 +288,8 @@ def dnssec_disable(as_json, domain):
 @click.option('--domain', required=True)
 def dnssec_rotate(as_json, domain):
     "Rotate DNSSEC keys for a domain"
-    r = httpx.post(f"{API_URL}/api/dnssec/rotate/{domain}", headers=HEADERS)
+    #r = httpx.post(f"{API_URL}/api/dnssec/rotate/{domain}", headers=HEADERS)
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/rotate/{domain}", headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -229,7 +298,8 @@ def dnssec_rotate(as_json, domain):
 @click.option('--domain', required=True)
 def dnssec_rotate_zsk(as_json, domain):
     "Rotate DNSSEC ZSK for a domain"
-    r = httpx.post(f"{API_URL}/api/dnssec/rotate/zsk/{domain}", headers=HEADERS)
+    #r = httpx.post(f"{API_URL}/api/dnssec/rotate/zsk/{domain}", headers=HEADERS)
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/rotate/zsk/{domain}", headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -238,7 +308,8 @@ def dnssec_rotate_zsk(as_json, domain):
 @click.option('--domain', required=True)
 def dnssec_resign(as_json, domain):
     "Re-sign the DNS zone for a domain"
-    r = httpx.post(f"{API_URL}/api/dnssec/resign/{domain}", headers=HEADERS)
+    #r = httpx.post(f"{API_URL}/api/dnssec/resign/{domain}", headers=HEADERS)
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/resign/{domain}", headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -247,7 +318,8 @@ def dnssec_resign(as_json, domain):
 @click.argument('state', type=click.Choice(['on', 'off']))
 def dnssec_auto_resign(as_json, state):
     "Toggle automatic DNSSEC re-signing (on/off)"
-    r = httpx.post(f"{API_URL}/api/dnssec/auto_resign/{state}", headers=HEADERS)
+    #r = httpx.post(f"{API_URL}/api/dnssec/auto_resign/{state}", headers=HEADERS)
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/auto_resign/{state}", headers=HEADERS)
     print_output(r, as_json)
 
 
@@ -256,7 +328,8 @@ def dnssec_auto_resign(as_json, state):
 @click.option('--limit', default=10, show_default=True)
 def logs(as_json, limit):
     "View recent DNS change logs"
-    r = httpx.get(f"{API_URL}/api/logs?limit={limit}", headers=HEADERS)
+    #r = httpx.get(f"{API_URL}/api/logs?limit={limit}", headers=HEADERS)
+    r = api_call(httpx.get, f"{API_URL}/api/logs?limit={limit}", headers=HEADERS)
     if as_json:
         print_output(r, as_json)
     else:

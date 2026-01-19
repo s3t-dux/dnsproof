@@ -34,3 +34,46 @@ python dnp.py dnssec-auto-resign off
 dnp -j dnssec-status --domain dnsproof.org
 dnp dnssec-status --domain dnsproof.org --json
 dnp dnssec-status --domain dnsproof.org -j
+
+# dump json file
+python dnp.py dump-zone --domain dnsproof.org --output C:/Users/shiro/Downloads/dnsproof.json
+
+#--------------------------------------------------------------
+# CLI global setup
+✅ Steps to Install dnp Globally (dev mode or prod mode)
+✅ Option A: Install as an editable dev package
+
+This is best for active development.
+
+Add pyproject.toml (if not already present)
+
+Define the CLI entry point:
+
+# pyproject.toml starts here
+[project]
+name = "dnsproof"
+version = "0.1.0"
+description = "DNSProof CLI"
+dependencies = ["click", "httpx"]
+requires-python = ">=3.8"
+
+[project.scripts]
+dnp = "cli.dnp:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+# pyproject.toml ends here
+
+From the root of your repo (where pyproject.toml is):
+
+# if you need to reinstall, first uninstall
+#pip uninstall dnsproof -y
+pip install -e .
+
+
+✅ Now you can run dnp ... from anywhere in that Python environment.

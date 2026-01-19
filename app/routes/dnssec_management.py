@@ -217,7 +217,7 @@ async def dnssec_status(
         status = "published"
         message = "DNSSEC is fully enabled and published"
     #elif rrsig or keys_in_gcs:  # Include GCS check for signed status
-    elif rrsig or ds_records:
+    elif rrsig:
         status = "signed_unpublished"
         message = "Domain is signed but DS record not published in parent zone"
     elif ds:

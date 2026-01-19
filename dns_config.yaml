@@ -1,6 +1,6 @@
 agent_secret: dEcartes2026
 domain: dnsproof.org
-nameserver_ip: 136.119.69.233
+nameserver_ip: 136.115.194.172
 ns_name: ns1.dnsproof.org
 enable_password_protect: true
 password: shiro123

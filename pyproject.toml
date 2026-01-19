@@ -1,0 +1,17 @@
+[project]
+name = "dnsproof"
+version = "0.1.0"
+description = "DNSProof CLI"
+dependencies = ["click", "httpx"]
+requires-python = ">=3.8"
+
+[project.scripts]
+dnp = "cli.dnp:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

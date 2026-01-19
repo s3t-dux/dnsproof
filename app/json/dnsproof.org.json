@@ -39,12 +39,6 @@
       "name": "@",
       "value": "test-adding1",
       "ttl": 3600
-    },
-    {
-      "type": "TXT",
-      "name": "mytest",
-      "value": "world",
-      "ttl": 3600
     }
   ]
 }

@@ -14,7 +14,7 @@ Add record_id endpoint and update "delete" and "edit" to take either values or r
 
 Done. Add --json output format
 
-CLI command to fetch & dump zone JSON file
+Done. CLI command to fetch & dump zone JSON file
 
 Build a package: dnp as installed console command
 

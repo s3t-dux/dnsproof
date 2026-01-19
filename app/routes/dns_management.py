@@ -5,6 +5,7 @@ from utils.agents import call_agent_hmac_async
 from fastapi import APIRouter, HTTPException, Request
 from utils.zone_json import add_record, edit_record, delete_record, load_zone_json
 from config import AGENT_IP
+import httpx
 
 router = APIRouter()
 
@@ -32,12 +33,25 @@ async def push_zone(request: Request):
         raise HTTPException(status_code=400, detail="Missing zone payload")
 
     # Forward directly as-is to agent
+    '''
     response = await call_agent_hmac_async(
         ip=AGENT_IP,
         path="/internal/dns/push",
         json=body,
     )
     return response.json()
+    '''
+    try:
+        response = await call_agent_hmac_async(
+            ip=AGENT_IP,
+            path="/internal/dns/push",
+            json=body,
+        )
+        return response.json()
+    except httpx.ConnectTimeout:
+        raise HTTPException(status_code=504, detail="Timeout: Agent VM is unreachable.")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Connection failed: {str(e)}")
 
 # Not exposing the delete endpoint to the app
 '''
