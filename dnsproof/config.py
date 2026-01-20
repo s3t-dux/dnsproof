@@ -9,5 +9,4 @@ KEY_DIR = Path("/etc/coredns/keys")
 JSON_DIR = Path("/srv/dns/json")
 EXPIRY_THRESHOLD_DAYS = 14
 AGENT_SECRET = os.getenv("AGENT_SECRET")
-#SERVER_NAME = os.getenv("SERVER_NAME")
-SERVER_NAME = "ns1"
+PRIMARY_NS = os.getenv("PRIMARY_NS")

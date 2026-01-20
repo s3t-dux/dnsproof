@@ -1,22 +1,23 @@
 #!/bin/bash
 set -e
 
-CONFIG_FILE="dns_config.yaml"
-#CONFIG_FILE=$1
-NS_NAME=$(hostname)
+#AGENT_SECRET="$1"
+#NAMESERVER_IP="$2"
+#DOMAIN="$3"
+#NS_NAME="$4"
+
+CONFIG_FILE=$1
 
 AGENT_SECRET=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['agent_secret'])" "$CONFIG_FILE")
-NAMESERVER_IP=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['nameservers']['$NS_NAME']['ip'])" "$CONFIG_FILE")
+NAMESERVER_IP=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['nameserver_ip'])" "$CONFIG_FILE")
 DOMAIN=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['domain'])" "$CONFIG_FILE")
-PRIMARY_NS=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['primary_ns'])" "$CONFIG_FILE")
-FQDN_NS_NAME="$NS_NAME.$DOMAIN"
+NS_NAME=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['ns_name'])" "$CONFIG_FILE")
 
-if [ -z "$NAMESERVER_IP" ]; then
-  echo "[ERROR] No IP found in dns_config.yaml for hostname: $NS_NAME"
+if [ -z "$AGENT_SECRET" ] || [ -z "$NAMESERVER_IP" ] || [ -z "$DOMAIN" ] || [ -z "$NS_NAME" ]; then
+  echo "Usage: $0 AGENT_SECRET IP DOMAIN NS_NAME"
+  echo "Example: $0 supersecretkey 1.2.3.4 dnsproof.org ns1.dnsproof.org"
   exit 1
 fi
-
-echo "[INFO] Bootstrapping $NS_NAME with IP $NAMESERVER_IP for $DOMAIN"
 
 ENV_FILE="/srv/dns/.env"
 
@@ -27,7 +28,6 @@ sudo mkdir -p /srv/dns
 
 # Save AGENT_SECRET to .env
 echo "AGENT_SECRET=$AGENT_SECRET" | sudo tee "$ENV_FILE" > /dev/null
-echo "PRIMARY_NS=$PRIMARY_NS" | sudo tee -a "$ENV_FILE" > /dev/null
 
 # Optional: Secure the .env file
 sudo chmod 600 "$ENV_FILE"
@@ -182,16 +182,16 @@ $DOMAIN {
 EOF
 
   # Create dnsproof zone file
-  cat > /etc/coredns/zone/$DOMAIN.zone <<EOF
-\$ORIGIN $DOMAIN.
-@   3600 IN SOA $FQDN_NS_NAME. admin.$DOMAIN. (
+  cat > /etc/coredns/zone/dnsproof.org.zone <<EOF
+\$ORIGIN dnsproof.org.
+@   3600 IN SOA $NS_NAME. admin.$DOMAIN. (
         2026010101 ; serial
         7200       ; refresh
         1800       ; retry
         1209600    ; expire
         3600 )     ; minimum
-    IN NS $FQDN_NS_NAME.
-$NS_NAME IN A $NAMESERVER_IP
+    IN NS ns1.dnsproof.org.
+ns1 IN A $NAMESERVER_IP
 @ IN TXT "test"
 EOF
 

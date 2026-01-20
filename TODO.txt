@@ -2,6 +2,7 @@
 1. cron job for re-sign a zone file when DNSSEC is enabled.
 2. Take care of SERVER_NAME in config.py for DNSSEC
 3. Change AGENT_SECRET
+4. endpoint to verify cryptographic signature
 
 # CLI
 ✅ Next Steps (Optional Enhancements):

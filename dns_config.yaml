@@ -1,6 +1,15 @@
+nameservers:
+  shiro-ns:
+    ip: 136.116.159.118
+  tokyo-a:
+    ip: 34.98.21.1
+  frankfurt-main:
+    ip: 35.199.12.4
+
 agent_secret: dEcartes2026
 domain: dnsproof.org
-nameserver_ip: 136.115.194.172
-ns_name: ns1.dnsproof.org
+primary_ns: "shiro-ns"
+
 enable_password_protect: true
 password: shiro123
+

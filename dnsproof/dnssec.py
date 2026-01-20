@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from config import ZONE_DIR, KEY_DIR, SERVER_NAME
+from config import ZONE_DIR, KEY_DIR, PRIMARY_NS
 from pathlib import Path
 import subprocess
 import dns.zone
@@ -12,6 +12,9 @@ import os
 import logging
 from datetime import datetime, timezone
 import time
+import socket
+
+SERVER_NAME = socket.gethostname()
 
 def disable_dnssec(domain: str):
     try:
@@ -199,7 +202,7 @@ def generate_dnssec_keys(domain: str, force: bool = False) -> bool:
     if len(key_files) >= 2:
         return False  # keys already exist
 
-    if SERVER_NAME != "ns1":
+    if SERVER_NAME != PRIMARY_NS:
         raise HTTPException(status_code=403, detail="Only ns1 can generate keys")
 
     os.makedirs(KEY_DIR, exist_ok=True)
@@ -302,7 +305,7 @@ def rotate_zsk_only(domain: str):
     if not zone_file.exists():
         raise HTTPException(status_code=400, detail="Zone file not found")
 
-    if SERVER_NAME != "ns1":
+    if SERVER_NAME != PRIMARY_NS:
         raise HTTPException(status_code=403, detail="Only ns1 can rotate ZSK")
 
     # Delete only ZSK (flag 256)

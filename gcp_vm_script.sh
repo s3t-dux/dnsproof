@@ -105,23 +105,23 @@ dig @$IPVM dnsproof.org MX +short
 
 #-------------------------------------------------
 # Bootstrap startup with Debian
-
-gcloud compute addresses create dns-ip \
-  --region=us-central1 
-
-VMNAME=dns-vm
 PROJECT=nameserver-platform
 ZONE=us-central1-a
-IPVM=136.115.194.172
 DOMAIN=dnsproof.org
-NS_NAME=ns1.dnsproof.org
+
+VMNAME=shiro-ns
+IPNAME=shiro-ip
+IPVM=136.116.159.118
+
+gcloud compute addresses create $IPNAME \
+  --region=us-central1 
 
 gcloud compute instances create $VMNAME \
   --zone=$ZONE \
   --machine-type=e2-micro \
   --image-family=debian-13 \
   --image-project=debian-cloud \
-  --address=dns-ip \
+  --address=$IPNAME \
   --tags=agent-vm,dns-server \
   --boot-disk-size=10GB \
   --scopes=compute-rw
@@ -146,23 +146,6 @@ gcloud compute ssh "$VMNAME" --zone="$ZONE" --command "
   sudo chown root:root /srv/dns/*.py && \
   sudo systemctl restart dnsagent && \
   sudo rm -f bootstrap_vm_portable.sh dnsagent_bundle.tar.gz
-"
-
-#----------------------------------------------------------
-# legacy code only for reference
-gcloud compute ssh $VMNAME --zone=$ZONE --command "
-  cd /tmp && \
-  tar xzf dnsagent_bundle.tar.gz && \
-  sudo apt-get update && \
-  sudo apt-get install -y dos2unix && \
-  dos2unix bootstrap_vm_portable.sh && \
-  chmod +x bootstrap_vm_portable.sh && \
-  sudo ./bootstrap_vm_portable.sh 'dEcartes2026' ${IPVM} ${DOMAIN} ${NS_NAME} && \
-  sudo mkdir -p /srv/dns && \
-  sudo mv dnsproof/*.py /srv/dns/ && \
-  sudo chown root:root /srv/dns/*.py && \
-  sudo systemctl restart dnsagent && \
-  sudo rm -rf /tmp/dnsproof /tmp/bootstrap_vm_portable.sh /tmp/*.tar.gz
 "
 
 #-------------------------------------------------
