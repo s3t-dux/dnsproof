@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from utils.dns import query_ns_direct, check_ns_propagation_status
-from config import AGENT_IPS, NS1
+from config import AGENT_IPS, NS_NAMES
 
 router = APIRouter()
 
@@ -22,4 +22,4 @@ async def verify_ns_route(domain: str, request: Request):
 
 @router.get("/ns_propagation_status/{domain}")
 async def ns_propagation_status_route(domain: str):
-    return check_ns_propagation_status(domain, {NS1})
+    return check_ns_propagation_status(domain, {s for s in NS_NAMES})

@@ -359,6 +359,7 @@ async def dnssec_status(domain: str):
     }
 
 # legacy code 
+'''
 # Update the dnssec_status route to include GCS check and DS records
 @router.get("/legacy/status/{domain}")
 async def dnssec_status(
@@ -443,3 +444,4 @@ async def dnssec_status(
             #"nameservers_trace": trace_result 
         }
     }
+'''

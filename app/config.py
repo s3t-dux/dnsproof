@@ -20,10 +20,12 @@ AGENT_SECRET = str(DNS_CONFIG.get("agent_secret", "")).strip()
 NAMESERVERS = DNS_CONFIG.get("nameservers", {})
 AGENT_IPS = [v["ip"] for v in NAMESERVERS.values() if "ip" in v]
 DOMAIN = DNS_CONFIG.get("domain", "example.com")
-NS1 = DNS_CONFIG.get("ns_name", "ns1.example.com")
+NS_NAMES = [v + '.' + DOMAIN for v in NAMESERVERS.keys() if NAMESERVERS]
+NS1 = NS_NAMES[0]
 PASSWORD = DNS_CONFIG.get("password", "").strip()
 USE_HTTPS = DNS_CONFIG.get("tls_enabled", False)
 CERT_PATH = DNS_CONFIG.get("agent_cert_path_app", "./")
+
 # Other static paths
 DB_PATH = BASE_DIR / "dnsproof.db"
 JSON_DIR = Path(__file__).resolve().parent / "json"

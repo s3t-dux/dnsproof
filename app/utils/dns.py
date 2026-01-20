@@ -4,7 +4,7 @@ import dns.rdatatype
 from dns.rdtypes.IN.A import A
 from dns.rdtypes.IN.AAAA import AAAA
 import random
-from config import NS1
+from config import NS_NAMES
 
 ROOT_SERVERS = [
     "198.41.0.4",     # a.root-servers.net
@@ -22,7 +22,7 @@ ROOT_SERVERS = [
     "202.12.27.33",    # m
 ]
 
-EXPECTED_NS = {NS1}
+EXPECTED_NS = {s for s in NS_NAMES}
 
 def query_ns_direct(ip: str, domain: str, timeout: int = 3):
     """

@@ -3,7 +3,8 @@
 2. Take care of SERVER_NAME in config.py for DNSSEC
 3. Change AGENT_SECRET
 4. endpoint to verify cryptographic signature
-5. make sure to update ns_management.py for multipe VMs
+Done. 5. make sure to update ns_management.py for multipe VMs
+6. Make sure to take care of NS1 in dnssec_management.py.
 
 # CLI
 ✅ Next Steps (Optional Enhancements):
