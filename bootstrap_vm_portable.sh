@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-CONFIG_FILE="dns_config.yaml"
-#CONFIG_FILE=$1
+#CONFIG_FILE="dns_config.yaml"
+CONFIG_FILE=$1
 NS_NAME=$(hostname)
 
 AGENT_SECRET=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['agent_secret'])" "$CONFIG_FILE")
@@ -10,6 +10,9 @@ NAMESERVER_IP=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv
 DOMAIN=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['domain'])" "$CONFIG_FILE")
 PRIMARY_NS=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['primary_ns'])" "$CONFIG_FILE")
 FQDN_NS_NAME="$NS_NAME.$DOMAIN"
+PRIMARY_NS_IP=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['nameservers']['$PRIMARY_NS']['ip'])" "$CONFIG_FILE")
+USE_HTTPS=$(python3 -c "import yaml,sys;print(str(yaml.safe_load(open(sys.argv[1])).get('tls_enabled',False)).lower())" "$CONFIG_FILE")
+CERT_PATH=$(python3 -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['agent_cert_path_ns'])" "$CONFIG_FILE")
 
 if [ -z "$NAMESERVER_IP" ]; then
   echo "[ERROR] No IP found in dns_config.yaml for hostname: $NS_NAME"
@@ -28,6 +31,7 @@ sudo mkdir -p /srv/dns
 # Save AGENT_SECRET to .env
 echo "AGENT_SECRET=$AGENT_SECRET" | sudo tee "$ENV_FILE" > /dev/null
 echo "PRIMARY_NS=$PRIMARY_NS" | sudo tee -a "$ENV_FILE" > /dev/null
+echo "PRIMARY_NS_IP=$PRIMARY_NS_IP" | sudo tee -a "$ENV_FILE" > /dev/null
 
 # Optional: Secure the .env file
 sudo chmod 600 "$ENV_FILE"
@@ -220,20 +224,54 @@ EOF
 setup_dnsaget() {
   echo "[INFO] Setting up dnsagent..."
 
-  # Create venv in /srv/dns
+  # Create venv
   mkdir -p /srv/dns
   cd /srv/dns
   python3 -m venv venv
   . venv/bin/activate
 
-  # Upgrade pip and install requirements
   pip install --upgrade pip
   pip install fastapi uvicorn[standard] aiofiles dnspython requests
 
   # Optional: drop your actual source files here
   echo "# Placeholder agent.py" > /srv/dns/agent.py
 
+  # --------------------------
+  # If HTTPS enabled, create cert
+  # --------------------------
+  echo "[DEBUG] USE_HTTPS=$USE_HTTPS"
+  if [ "$USE_HTTPS" = "true" ]; then
+  if [ "$NS_NAME" = "$PRIMARY_NS" ]; then
+    echo "[INFO] HTTPS enabled on primary. Creating self-signed cert in $CERT_PATH"
+    sudo mkdir -p "$CERT_PATH"
+
+    #openssl req -x509 -nodes -days 365 \
+    #  -newkey rsa:2048 \
+    #  -keyout "$CERT_PATH/agent.key" \
+    #  -out "$CERT_PATH/agent.crt" \
+    #  -subj "/CN=$NS_NAME"
+    
+    openssl req -x509 -nodes -days 365 \
+      -newkey rsa:2048 \
+      -keyout "$CERT_PATH/agent.key" \
+      -out "$CERT_PATH/agent.crt" \
+      -subj "/CN=$NAMESERVER_IP" \
+      -addext "subjectAltName = IP:$NAMESERVER_IP"
+
+  else
+    echo "[INFO] Secondary NS: HTTPS enabled, but cert must be copied from primary."
+  fi
+
+  SSL_ARGS="--ssl-keyfile $CERT_PATH/agent.key --ssl-certfile $CERT_PATH/agent.crt"
+else
+  SSL_ARGS=""
+fi
+
+  # --------------------------
   # Create systemd unit
+  # --------------------------
+  echo "[INFO] Creating systemd unit for dnsagent..."
+
   cat > /etc/systemd/system/dnsagent.service <<EOF
 [Unit]
 Description=DNS Agent API (VM-side)
@@ -242,7 +280,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/srv/dns
-ExecStart=/srv/dns/venv/bin/python3 -m uvicorn agent:app --host 0.0.0.0 --port 8000
+ExecStart=/srv/dns/venv/bin/python3 -m uvicorn agent:app --host 0.0.0.0 --port 8000 $SSL_ARGS
 Restart=always
 RestartSec=3
 
@@ -250,7 +288,9 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-  # Allow API port (8000) through firewall
+  # --------------------------
+  # Open port 8000
+  # --------------------------
   echo "[INFO] Allowing port 8000 through firewall..."
 
   if command -v ufw >/dev/null 2>&1; then
@@ -262,7 +302,7 @@ EOF
     echo "[WARN] No firewall tool (ufw or firewalld) found. Skipping port 8000 rule."
   fi
 
-  # Enable service
+  # Enable and start service
   systemctl daemon-reexec
   systemctl daemon-reload
   systemctl enable dnsagent.service
@@ -303,6 +343,16 @@ setup_DNSSEC_cron() {
   echo "true" > /etc/dnsproof/auto_resign_enabled
 }
 
+warn_ssl_if_missing() {
+  if [ "$USE_HTTPS" = "true" ] && [ "$NS_NAME" != "$PRIMARY_NS" ]; then
+    if [ ! -f "$CERT_PATH/agent.crt" ]; then
+      echo "[WARN] No cert found at $CERT_PATH/agent.crt"
+      echo "[HINT] Copy the cert from primary using:"
+      echo "scp $PRIMARY_NS:$CERT_PATH/agent.crt $CERT_PATH/"
+    fi
+  fi
+}
+
 #----------------------------
 # MAIN
 #----------------------------
@@ -314,5 +364,6 @@ fix_port53_conflict_and_hostname
 install_coredns
 setup_dnsaget
 setup_DNSSEC_cron
+warn_ssl_if_missing
 
 echo "[BOOTSTRAP] VM ready. CoreDNS running. You can now push updated Corefiles and zones."

@@ -4,7 +4,7 @@ from typing import Optional
 from utils.agents import call_agent_hmac_async
 from fastapi import APIRouter, HTTPException, Request
 from utils.zone_json import add_record, edit_record, delete_record, load_zone_json
-from config import AGENT_IP
+from config import AGENT_IPS, AGENT_IP
 import httpx
 
 router = APIRouter()
@@ -26,32 +26,39 @@ class AddRecordRequest(BaseModel):
 async def push_zone(request: Request):
     body = await request.json()
 
-    if not AGENT_IP or not body:
-        raise HTTPException(status_code=400, detail="Missing agent_ip or zone file")
+    if not AGENT_IPS:
+        raise HTTPException(status_code=400, detail="Missing agent IPs")
 
     if not body:
         raise HTTPException(status_code=400, detail="Missing zone payload")
+    
+    results = []
+    for agent_ip in AGENT_IPS:
+        try:
+            response = await call_agent_hmac_async(
+                ip=agent_ip,
+                path="/internal/dns/push",
+                json=body,
+            )
+            data = response.json()
+            status = data.get("status")
 
-    # Forward directly as-is to agent
-    '''
-    response = await call_agent_hmac_async(
-        ip=AGENT_IP,
-        path="/internal/dns/push",
-        json=body,
-    )
-    return response.json()
-    '''
-    try:
-        response = await call_agent_hmac_async(
-            ip=AGENT_IP,
-            path="/internal/dns/push",
-            json=body,
-        )
-        return response.json()
-    except httpx.ConnectTimeout:
-        raise HTTPException(status_code=504, detail="Timeout: Agent VM is unreachable.")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Connection failed: {str(e)}")
+            results.append({"ip": agent_ip, "status": status, "detail": data})
+            
+        except httpx.ConnectTimeout:
+            results.append({
+                "ip": agent_ip,
+                "status": "timeout",
+                "error": "Agent VM is unreachable"
+            })
+        except httpx.RequestError as e:
+            results.append({
+                "ip": agent_ip,
+                "status": "connection_error",
+                "error": str(e)
+            })
+        
+    return results
 
 # Not exposing the delete endpoint to the app
 '''
@@ -89,21 +96,29 @@ async def add_dns_record(req: AddRecordRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
-    # After all adds, push to agent
+    # After adding records, push updated zone to all agent VMs
     zone_json = load_zone_json(domain)
-    try:
-        await call_agent_hmac_async(
-            ip=AGENT_IP,
-            path="/internal/dns/push",
-            json=zone_json
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Zone updated locally but failed to push to agent: {e}")
+    results = []
+
+    for agent_ip in AGENT_IPS:
+        try:
+            response = await call_agent_hmac_async(
+                ip=agent_ip,
+                path="/internal/dns/push",
+                json=zone_json
+            )
+            data = response.json()
+            results.append({"ip": agent_ip, "status": data.get("status"), "detail": data})
+        except httpx.ConnectTimeout:
+            results.append({"ip": agent_ip, "status": "timeout", "error": "Agent VM unreachable"})
+        except httpx.RequestError as e:
+            results.append({"ip": agent_ip, "status": "connection_error", "error": str(e)})
 
     return {
         "status": "success",
         "added_count": len(added),
-        "skipped": errors
+        "skipped": errors,
+        "push_results": results
     }
 
 class EditRecordItem(BaseModel):
@@ -122,6 +137,7 @@ async def edit_dns_records(req: EditRecordsRequest):
     updated = []
     errors = []
 
+    # Step 1: Apply edits locally
     for item in edits:
         try:
             edit_record(domain, item.record_id, item.record.dict())
@@ -131,22 +147,42 @@ async def edit_dns_records(req: EditRecordsRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
-    # Push final updated zone
+    # Step 2: Push updated zone to all agent VMs
     zone_json = load_zone_json(domain)
-    try:
-        await call_agent_hmac_async(
-            ip=AGENT_IP,
-            path="/internal/dns/push",
-            json=zone_json
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Zone updated locally but failed to push to agent: {e}")
+    results = []
+
+    for agent_ip in AGENT_IPS:
+        try:
+            response = await call_agent_hmac_async(
+                ip=agent_ip,
+                path="/internal/dns/push",
+                json=zone_json
+            )
+            data = response.json()
+            results.append({
+                "ip": agent_ip,
+                "status": data.get("status"),
+                "detail": data
+            })
+        except httpx.ConnectTimeout:
+            results.append({
+                "ip": agent_ip,
+                "status": "timeout",
+                "error": "Agent VM unreachable"
+            })
+        except httpx.RequestError as e:
+            results.append({
+                "ip": agent_ip,
+                "status": "connection_error",
+                "error": str(e)
+            })
 
     return {
         "status": "success",
         "updated_count": len(updated),
         "updated_ids": updated,
-        "skipped": errors
+        "skipped": errors,
+        "push_results": results
     }
 
 class DeleteRecordsRequest(BaseModel):
@@ -161,6 +197,7 @@ async def delete_dns_records(req: DeleteRecordsRequest):
     deleted = []
     errors = []
 
+    # Step 1: Apply deletions locally
     for record_id in ids:
         try:
             delete_record(domain, record_id)
@@ -170,20 +207,40 @@ async def delete_dns_records(req: DeleteRecordsRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
-    # Push zone only once
+    # Step 2: Push updated zone to all agent VMs
     zone_json = load_zone_json(domain)
-    try:
-        await call_agent_hmac_async(
-            ip=AGENT_IP,
-            path="/internal/dns/push",
-            json=zone_json
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Zone updated locally but failed to push to agent: {e}")
+    results = []
+
+    for agent_ip in AGENT_IPS:
+        try:
+            response = await call_agent_hmac_async(
+                ip=agent_ip,
+                path="/internal/dns/push",
+                json=zone_json
+            )
+            data = response.json()
+            results.append({
+                "ip": agent_ip,
+                "status": data.get("status"),
+                "detail": data
+            })
+        except httpx.ConnectTimeout:
+            results.append({
+                "ip": agent_ip,
+                "status": "timeout",
+                "error": "Agent VM unreachable"
+            })
+        except httpx.RequestError as e:
+            results.append({
+                "ip": agent_ip,
+                "status": "connection_error",
+                "error": str(e)
+            })
 
     return {
         "status": "success",
         "deleted_count": len(deleted),
         "deleted_ids": deleted,
-        "skipped": errors
+        "skipped": errors,
+        "push_results": results
     }

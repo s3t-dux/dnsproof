@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from config import ZONE_DIR, KEY_DIR, PRIMARY_NS
+from config import ZONE_DIR, KEY_DIR, IS_PRIMARY
 from pathlib import Path
 import subprocess
 import dns.zone
@@ -12,9 +12,7 @@ import os
 import logging
 from datetime import datetime, timezone
 import time
-import socket
-
-SERVER_NAME = socket.gethostname()
+from fastapi.responses import StreamingResponse
 
 def disable_dnssec(domain: str):
     try:
@@ -202,15 +200,49 @@ def generate_dnssec_keys(domain: str, force: bool = False) -> bool:
     if len(key_files) >= 2:
         return False  # keys already exist
 
-    if SERVER_NAME != PRIMARY_NS:
-        raise HTTPException(status_code=403, detail="Only ns1 can generate keys")
+    if IS_PRIMARY:
+        os.makedirs(KEY_DIR, exist_ok=True)
+        try:
+            subprocess.run(["ldns-keygen", "-a", "RSASHA256", domain], check=True, cwd=KEY_DIR)
+            subprocess.run(["ldns-keygen", "-a", "RSASHA256", "-k", domain], check=True, cwd=KEY_DIR)
+        except subprocess.CalledProcessError as e:
+            raise HTTPException(status_code=500, detail=f"Keygen failed: {e}")
+    else:
+        print("[INFO] Not primary. Attempting to fetch DNSSEC keys from primary NS...")
 
-    os.makedirs(KEY_DIR, exist_ok=True)
-    try:
-        subprocess.run(["ldns-keygen", "-a", "RSASHA256", domain], check=True, cwd=KEY_DIR)
-        subprocess.run(["ldns-keygen", "-a", "RSASHA256", "-k", domain], check=True, cwd=KEY_DIR)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Keygen failed: {e}")
+        import requests
+        import hashlib
+        import hmac
+        import zipfile
+        import io
+        from config import PRIMARY_NS_IP, AGENT_SECRET  # make sure these exist
+
+        try:
+            os.makedirs(KEY_DIR, exist_ok=True)
+
+            # Create HMAC signature
+            body = b""  # no request body
+            sig = hmac.new(AGENT_SECRET.encode(), body, hashlib.sha256).hexdigest()
+            headers = {"X-Signature": sig}
+
+            # https
+            #url = f"https://{PRIMARY_NS_IP}:8000/internal/dns/dnssec/keys/{domain}"
+            #response = requests.get(url, headers=headers, verify="/etc/ssl/dnsproof/agent.crt")
+
+            # http
+            url = f"http://{PRIMARY_NS_IP}:8000/internal/dns/dnssec/keys/{domain}"
+            response = requests.get(url, headers=headers)
+
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=f"Key fetch failed: {response.text}")
+
+            # Unzip directly into KEY_DIR
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                zf.extractall(KEY_DIR)
+
+            print(f"[DONE] Keys fetched from {PRIMARY_NS_IP} and placed in {KEY_DIR}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"DNSSEC key sync failed: {e}")
 
     return True
 
@@ -305,7 +337,7 @@ def rotate_zsk_only(domain: str):
     if not zone_file.exists():
         raise HTTPException(status_code=400, detail="Zone file not found")
 
-    if SERVER_NAME != PRIMARY_NS:
+    if IS_PRIMARY:
         raise HTTPException(status_code=403, detail="Only ns1 can rotate ZSK")
 
     # Delete only ZSK (flag 256)
@@ -362,3 +394,31 @@ def resign_zone_file(domain: str):
             if rdataset.rdtype == dns.rdatatype.RRSIG
         )
     }
+
+def get_dnssec_keys(domain: str):
+    from fastapi.responses import FileResponse
+    import zipfile
+    import io
+
+    #key_files = list(KEY_DIR.glob(f"K{domain}.+008+*.key")) + list(KEY_DIR.glob(f"K{domain}.+008+*.private"))
+    key_files = (
+        list(KEY_DIR.glob(f"K{domain}.+008+*.key")) +
+        list(KEY_DIR.glob(f"K{domain}.+008+*.private")) +
+        list(KEY_DIR.glob(f"K{domain}.+008+*.ds"))
+    )
+
+    if not key_files:
+        raise HTTPException(status_code=404, detail="No DNSSEC keys found")
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for f in key_files:
+            zf.write(f, arcname=f.name)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{domain}_dnssec_keys.zip"'
+        }
+    )

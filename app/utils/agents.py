@@ -4,13 +4,15 @@ import json
 import hmac
 import hashlib
 import httpx
-from config import AGENT_SECRET
+from config import AGENT_SECRET, USE_HTTPS, CERT_PATH
 
 def json_dumps(payload: dict) -> bytes:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
 
 async def call_agent_hmac_async(ip, path, secret=AGENT_SECRET, json=None, method="POST", timeout=5):
-    url = f"http://{ip}:8000{path}"
+
+    scheme = "https" if USE_HTTPS else "http"
+    url = f"{scheme}://{ip}:8000{path}"
 
     headers = {}
     body_bytes = b""
@@ -32,7 +34,11 @@ async def call_agent_hmac_async(ip, path, secret=AGENT_SECRET, json=None, method
     signature = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
     headers["X-Signature"] = signature
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    # HTTPS w/ pinned cert
+    print(f"[DEBUG] CERT_PATH: {CERT_PATH}")
+    verify_cert = CERT_PATH if USE_HTTPS else False
+
+    async with httpx.AsyncClient(timeout=timeout, verify=verify_cert) as client:
         res = await client.request(method, url, content=body_bytes, headers=headers)
 
     try:

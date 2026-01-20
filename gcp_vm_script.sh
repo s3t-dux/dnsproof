@@ -81,7 +81,7 @@ dig @127.0.0.1 dnsproof.org TXT
 dig @127.0.0.1 dnsproof.org NS
 dig @127.0.0.1 ns1.dnsproof.org A
 
-IPVM=136.115.36.6
+IPVM=34.55.170.241
 # on outside
 dig @$IPVM dnsproof.org TXT +short
 dig @$IPVM ns1.dnsproof.org A +short
@@ -104,14 +104,17 @@ curl -X POST http://$IPVM:8000/internal/dns/push \
 dig @$IPVM dnsproof.org MX +short
 
 #-------------------------------------------------
-# Bootstrap startup with Debian
+# Bootstrap startup with Debian for primary NS
 PROJECT=nameserver-platform
 ZONE=us-central1-a
 DOMAIN=dnsproof.org
+CERT_PATH=/etc/ssl/dnsproof
 
 VMNAME=shiro-ns
 IPNAME=shiro-ip
-IPVM=136.116.159.118
+
+VMNAME=osaka-ns
+IPNAME=osaka-ip
 
 gcloud compute addresses create $IPNAME \
   --region=us-central1 
@@ -146,6 +149,29 @@ gcloud compute ssh "$VMNAME" --zone="$ZONE" --command "
   sudo chown root:root /srv/dns/*.py && \
   sudo systemctl restart dnsagent && \
   sudo rm -f bootstrap_vm_portable.sh dnsagent_bundle.tar.gz
+"
+
+# TLS cert
+gcloud compute ssh shiro-ns --zone="$ZONE" --command "
+  sudo mkdir -p /home/shiro3nsp/tls
+  sudo chown shiro3nsp:shiro3nsp /home/shiro3nsp/tls
+  sudo cp /etc/ssl/dnsproof/agent.key /home/shiro3nsp/tls/
+  sudo cp /etc/ssl/dnsproof/agent.crt /home/shiro3nsp/tls/
+  sudo chown shiro3nsp:shiro3nsp /home/shiro3nsp/tls/agent.key
+  sudo chown shiro3nsp:shiro3nsp /home/shiro3nsp/tls/agent.crt
+  sudo chmod 755 /home/shiro3nsp/agent.key
+"
+# from primary NS
+gcloud compute scp shiro-ns:/home/shiro3nsp/tls/agent.crt tls_cert/ --zone=$ZONE
+gcloud compute scp shiro-ns:/home/shiro3nsp/agent.key tls_cert/ --zone=$ZONE
+
+# to secondary NS
+gcloud compute scp agent.crt osaka-ns:/tmp/  --zone=$ZONE
+
+gcloud compute ssh osaka-ns --zone="$ZONE" --command "
+  cd /tmp && \
+  sudo mkdir -p \"$CERT_PATH\" && \
+  sudo mv agent.crt \"$CERT_PATH\"/agent.crt
 "
 
 #-------------------------------------------------

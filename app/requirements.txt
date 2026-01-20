@@ -7,3 +7,4 @@ asyncpg
 dnspython
 nacl-middleware
 pyyaml
+requests

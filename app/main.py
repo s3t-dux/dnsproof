@@ -9,8 +9,10 @@ app = FastAPI(title="DNSProof App Backend")
 init_db() # Automatically create sqlite db if missing
 ensure_signing_key_exists()  # Automatically creates and logs key if missing
 
-from config import AGENT_IP, DNS_CONFIG
-print(f"[STARTUP] AGENT_IP resolved as: {AGENT_IP}")
+from config import AGENT_IPS, DNS_CONFIG, USE_HTTPS, CERT_PATH
+print(f"[STARTUP] AGENT_IP resolved as: {AGENT_IPS}")
+if USE_HTTPS:
+    print(f"[DEBUG] CERT_PATH: {CERT_PATH}")
 
 if DNS_CONFIG.get("enable_password_protect", False):
     print(f"[INFO] password is enabled for the app")

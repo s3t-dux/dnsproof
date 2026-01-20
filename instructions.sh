@@ -23,7 +23,7 @@ export DNSPROOF_PASSWORD=shiro123
 python dnp.py add --domain dnsproof.org --type TXT --name hello --value world
 python dnp.py logs
 
-python dnp.py edit --domain dnsproof.org --type TXT --old-name @ --old-value test0 --new-name @ --new-value test1
+python dnp.py edit --domain dnsproof.org --type TXT --old-name @ --old-value test-edited1 --new-name @ --new-value test-edited2
 
 python dnp.py delete --domain dnsproof.org --type TXT --name mytest --value world
 
