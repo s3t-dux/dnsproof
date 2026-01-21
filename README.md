@@ -42,3 +42,18 @@ DNSProof is currently being extracted and generalized from StackDNS's live infra
 - A signing and logging backend built in FastAPI  
 - A minimal but usable frontend dashboard  
 - CLI tools for DNS management and log verification
+
+## Preview Resources
+
+While the full codebase is still being prepared for public release, the following files are now available in this repository:
+
+- `docs/cli.md` — Full documentation for the `dnp` CLI
+- `examples/dns_config.yaml` — Sample configuration file
+- `examples/dnsproof.org.json` — Example zone file format
+- `examples/demo_logs.json` — Realistic signed DNS change logs
+
+These illustrate the reproducibility, auditability, and developer experience behind DNSProof’s approach.
+
+A short video demo is also available at: [https://stackdns.io/nlnetdemo](https://stackdns.io/nlnetdemo)
+
+Want early access to the backend code? [Open an issue](https://github.com/s3t-dux/dnsproof/issues) or reach out via the contact form at [stackdns.io](https://stackdns.io).
