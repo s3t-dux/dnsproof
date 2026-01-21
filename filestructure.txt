@@ -21,6 +21,7 @@ app/
 │   │   ├── cryptographic_signing.py
 │   │   ├── db.py
 │   │   ├── dnssec_logging.py
+│   │   ├── middlewares.py
 │   │   ├── zone_json.py              
 │   │   └── dns.py
 │   │       

@@ -1,0 +1,44 @@
+{
+  "domain": "dnsproof.org",
+  "records": [
+    {
+      "type": "SOA",
+      "name": "@",
+      "value": "ns1.dnsproof.org. admin.dnsproof.org. 2026010801 7200 1800 1209600 3600"
+    },
+    {
+      "type": "NS",
+      "name": "@",
+      "value": "ns1.dnsproof.org."
+    },
+    {
+      "type": "A",
+      "name": "ns1",
+      "value": "136.115.36.6"
+    },
+    {
+      "type": "TXT",
+      "name": "@",
+      "value": "test1",
+      "ttl": 3600
+    },
+    {
+      "type": "MX",
+      "name": "@",
+      "value": "mx1.stackdns.io",
+      "priority": 10
+    },
+    {
+      "type": "MX",
+      "name": "@",
+      "value": "mx2.stackdns.io",
+      "priority": 20
+    },
+    {
+      "type": "TXT",
+      "name": "@",
+      "value": "test-edited2",
+      "ttl": 3600
+    }
+  ]
+}
