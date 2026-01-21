@@ -81,8 +81,12 @@ dig @127.0.0.1 dnsproof.org TXT
 dig @127.0.0.1 dnsproof.org NS
 dig @127.0.0.1 ns1.dnsproof.org A
 
-IPVM=34.55.170.241
+IPShiro=136.116.159.118
+IPOsaka=34.55.170.241
 # on outside
+dig @$IPShiro dnsproof.org TXT +short
+dig @$IPOsaka dnsproof.org TXT +short
+
 dig @$IPVM dnsproof.org TXT +short
 dig @$IPVM ns1.dnsproof.org A +short
 

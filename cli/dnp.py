@@ -56,7 +56,7 @@ def cli():
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 @click.option('--type', 'rtype', required=True)
 @click.option('--name', required=True)
 @click.option('--value', required=True)
@@ -79,7 +79,7 @@ def add(as_json, domain, rtype, name, value, ttl):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 def list(as_json, domain):
     "List DNS records (raw JSON output)"
     try:
@@ -114,7 +114,7 @@ def record_id(rtype, name, value):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 @click.option('--record-id', required=False)
 @click.option('--type', 'rtype', required=False)
 @click.option('--old-name', required=False)
@@ -171,7 +171,7 @@ def edit(as_json, domain, record_id, rtype, old_name, old_value, new_name, new_v
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 @click.option('--record-id', required=False)
 @click.option('--type', 'rtype', required=False)
 @click.option('--name', required=False)
@@ -218,7 +218,7 @@ def delete(as_json, domain, record_id, rtype, name, value):
         click.echo(f"Error: {e}")
 
 @cli.command()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 @click.option('--output', type=click.Path(writable=True), default=None, help="Output file path. Defaults to stdout")
 def dump_zone(domain, output):
     """Fetch and dump the zone JSON file from local disk"""
@@ -235,7 +235,7 @@ def dump_zone(domain, output):
 
 
 @cli.command()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 @click.option('--yes', is_flag=True, help="Bypass confirmation prompt")
 @json_option()
 def push_zone(as_json, domain, yes):
@@ -255,7 +255,7 @@ def push_zone(as_json, domain, yes):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 def dnssec_status(as_json, domain):
     "Check DNSSEC status for a domain"
     #r = httpx.get(f"{API_URL}/api/dnssec/status/{domain}", headers=HEADERS)
@@ -265,7 +265,7 @@ def dnssec_status(as_json, domain):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 def dnssec_enable(as_json, domain):
     "Enable DNSSEC for a domain"
     #r = httpx.post(f"{API_URL}/api/dnssec/enable/{domain}", headers=HEADERS)
@@ -275,7 +275,7 @@ def dnssec_enable(as_json, domain):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 def dnssec_disable(as_json, domain):
     "Disable DNSSEC for a domain"
     #r = httpx.post(f"{API_URL}/api/dnssec/disable/{domain}", headers=HEADERS)
@@ -285,7 +285,7 @@ def dnssec_disable(as_json, domain):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 def dnssec_rotate(as_json, domain):
     "Rotate DNSSEC keys for a domain"
     #r = httpx.post(f"{API_URL}/api/dnssec/rotate/{domain}", headers=HEADERS)
@@ -295,7 +295,7 @@ def dnssec_rotate(as_json, domain):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 def dnssec_rotate_zsk(as_json, domain):
     "Rotate DNSSEC ZSK for a domain"
     #r = httpx.post(f"{API_URL}/api/dnssec/rotate/zsk/{domain}", headers=HEADERS)
@@ -305,7 +305,7 @@ def dnssec_rotate_zsk(as_json, domain):
 
 @cli.command()
 @json_option()
-@click.option('--domain', required=True)
+@click.option('--domain', '-d', required=True)
 def dnssec_resign(as_json, domain):
     "Re-sign the DNS zone for a domain"
     #r = httpx.post(f"{API_URL}/api/dnssec/resign/{domain}", headers=HEADERS)
@@ -336,6 +336,30 @@ def logs(as_json, limit):
         for entry in r.json():
             click.echo(f"{entry['created_at']} | {entry['action']} {entry['record_type']} {entry['record_name']} -> {entry['record_value']}")
 
+@cli.command()
+@json_option()
+@click.option('--domain', '-d', required=True)
+def verify_ns(as_json, domain):
+    "Query each agent directly for NS records"
+    r = api_call(httpx.get, f"{API_URL}/api/ns/verify-ns/{domain}", headers=HEADERS)
+    print_output(r, as_json)
+
+
+@cli.command()
+@json_option()
+@click.option('--domain', '-d', required=True)
+def ns_propagation(as_json, domain):
+    """Check if NS records are fully propagated"""
+    r = api_call(httpx.get, f"{API_URL}/api/ns/ns-propagation-status/{domain}", headers=HEADERS)
+    print_output(r, as_json)
+
+@cli.command("nameservers")
+@json_option()
+@click.option('--domain', '-d', required=True)
+def get_nameservers(as_json, domain):
+    """List NS records configured in DNSProof config"""
+    r = api_call(httpx.get, f"{API_URL}/api/ns/nameservers/{domain}", headers=HEADERS)
+    print_output(r, as_json)
 
 if __name__ == '__main__':
     cli()

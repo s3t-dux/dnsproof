@@ -11,6 +11,6 @@ primary_ns: "shiro-ns"
 enable_password_protect: true
 password: shiro123
 
-tls_enabled: true
+tls_enabled: false
 agent_cert_path_ns: "/etc/ssl/dnsproof"
 agent_cert_path_app: "../agent.crt"
