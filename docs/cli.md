@@ -133,4 +133,4 @@ dnp verify-ns -d dnsproof.org
 The CLI is production-ready and used internally by DNSProof to manage all zone deployments. Full reproducibility and deterministic record hashing are supported.
 
 ## License
-MIT — see LICENSE
+MIT — see [LICENSE]
