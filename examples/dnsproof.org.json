@@ -4,7 +4,7 @@
     {
       "type": "SOA",
       "name": "@",
-      "value": "ns1.dnsproof.org. admin.dnsproof.org. 2026010801 7200 1800 1209600 3600"
+      "value": "ns1.dnsproof.org. admin.dnsproof.org. 2026012601 7200 1800 1209600 3600"
     },
     {
       "type": "NS",
@@ -14,30 +14,22 @@
     {
       "type": "A",
       "name": "ns1",
-      "value": "136.115.36.6"
+      "value": "34.27.249.149"
+    },
+    {
+      "type": "NS",
+      "name": "@",
+      "value": "ns2.dnsproof.org."
+    },
+    {
+      "type": "A",
+      "name": "ns2",
+      "value": "34.132.195.137"
     },
     {
       "type": "TXT",
       "name": "@",
-      "value": "test1",
-      "ttl": 3600
-    },
-    {
-      "type": "MX",
-      "name": "@",
-      "value": "mx1.stackdns.io",
-      "priority": 10
-    },
-    {
-      "type": "MX",
-      "name": "@",
-      "value": "mx2.stackdns.io",
-      "priority": 20
-    },
-    {
-      "type": "TXT",
-      "name": "@",
-      "value": "test-edited2",
+      "value": "dnsproof init",
       "ttl": 3600
     }
   ]

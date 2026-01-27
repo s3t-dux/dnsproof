@@ -20,7 +20,7 @@
   Easily inspect historical changes through a simple web UI or command line.
 
 - **Reproducibility manifest**  
-  Docker Compose and Nix Flake support for verifiable, bit-for-bit identical deployments.
+  Docker Compose-based environments and planned Nix Flake support for bit-for-bit identical deployments.
 
 ## Why DNSProof?
 
@@ -36,21 +36,22 @@ DNSProof solves this by providing:
 
 ## Project Status
 
-DNSProof is currently being extracted and generalized from StackDNS's live infrastructure. Development is ongoing, and the first public release will include:
+DNSProof is actively evolving from StackDNS's live infrastructure. The current public release includes:
 
 - Provisioning scripts for CoreDNS or NSD-based VMs  
-- A signing and logging backend built in FastAPI  
-- A minimal but usable frontend dashboard  
-- CLI tools for DNS management and log verification
+- A signing and logging backend built in FastAPI (private for now)  
+- A fully working CLI (`dnp.py`) for DNS record control, DNSSEC, logs, and zone management  
+- Sample configuration files, demo logs, and developer documentation
 
 ## Preview Resources
 
-While the full codebase is still being prepared for public release, the following files are now available in this repository:
+The following files are now available in this repository:
 
-- `docs/cli.md` — Full documentation for the `dnp` CLI
-- `examples/dns_config.yaml` — Sample configuration file
-- `examples/dnsproof.org.json` — Example zone file format
-- `examples/demo_logs.json` — Realistic signed DNS change logs
+- `dnp.py` — CLI entrypoint for DNS management and log verification  
+- `docs/cli.md` — Full documentation for the `dnp` CLI  
+- `examples/dns_config.yaml` — Sample configuration file  
+- `examples/dnsproof.org.json` — Example zone file format  
+- `examples/demo_logs.json` — Realistic signed DNS change logs  
 
 These illustrate the reproducibility, auditability, and developer experience behind DNSProof’s approach.
 

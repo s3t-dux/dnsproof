@@ -1,16 +1,14 @@
 nameservers:
   ns1:
-    ip: 136.116.159.118
+    ip: 136.119.120.167
   ns2:
-    ip: 34.55.170.241
+    ip: 34.171.85.147
 
-agent_secret: my-hmac-agent-secret
 domain: dnsproof.org
-primary_ns: ns1
+primary_ns: "ns1"
 
-enable_password_protect: true
-password: my-secret-app-password
+resolver: nsd # coredns or nsd
 
-tls_enabled: false
+tls_enabled: true
 agent_cert_path_ns: "/etc/ssl/dnsproof"
-agent_cert_path_app: "../agent.crt"
+agent_cert_path_app: "../tls_cert"
