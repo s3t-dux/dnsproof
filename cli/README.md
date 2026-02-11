@@ -47,6 +47,40 @@ Use `--json` (or `-j`) to print raw output with spacing.
 
 This section covers one-time setup: provisioning nameservers, configuring environment variables, and launching the local backend.
 
+### Config YAML file  
+
+Generates a DNSProof config file for your domain — including nameserver IPs, resolver type, TLS options, and more.
+
+```bash
+dnp generate-config \
+  --domain dnsproof.org \
+  --primary-ns ns1 \
+  --ns ns1:1.2.3.4 --ns ns2:5.6.7.8 \
+  --tls-enabled \
+  --resolver coredns \
+  --agent-cert-path-ns /srv/certs \
+  --agent-cert-path-app ./certs \
+  --output config.yaml
+```
+This produces:
+```bash
+domain: dnsproof.org
+primary_ns: ns1
+nameservers:
+  ns1:
+    ip: 1.2.3.4
+  ns2:
+    ip: 5.6.7.8
+resolver: coredns
+tls_enabled: true
+agent_cert_path_ns: /srv/certs
+agent_cert_path_app: ./certs
+```
+- If `--tls-enabled` is omitted, `the agent_cert_path_ns` and `agent_cert_path_app` fields are excluded.
+- Paths are written exactly as passed — on Windows with Git Bash, prefer using `C:\path\to\certs` or `/c/path/to/certs` to avoid auto-rewriting by the shell.
+- This config file is required for `dnp install`, `dnp init`, and most domain operations.
+- Throughout this documentation, `dns_config.yaml` is used as the default path.
+
 ### Nameserver Provisioning  
 Provision a nameserver VM with CoreDNS or NSD, plus the DNSProof agent and DNSSEC key generation.
 
@@ -87,11 +121,62 @@ dnp env --envfile .env   # Write to .env file
 After writing, run `source <file>` to load them into your current shell session.  
 
 ### Launch the Development Server
+
 Run the FastAPI backend locally — useful for testing or development.
 ```bash
 dnp devserver
 ```
 **!! Must be run from the `dnsproof/app/` directory.**
+
+### Init
+
+Initialize domain management by registering the domain and its base configuration with the backend.
+```bash
+dnp init --config dns_config.yaml
+```
+This command:
+- Registers the domain in the backend database
+- Stores the full `dns_config.yaml` as the authoritative configuration
+- Writes an initial canonical zone JSON file locally  
+(use `--output` to specify a custom path)  
+
+This step is required before any DNS records or configuration updates can be applied.
+
+### Set-config
+Update the stored configuration for an already registered domain.
+```bash
+dnp set-config --file dns_config.yaml
+```
+This command:
+- Updates the domain’s configuration in the backend database
+- Does **not** push changes to nameservers
+- Does **not** implicitly re‑register domains (prevents accidental typos)
+
+### Get-config
+Retrieve the configuration currently stored in the backend database.
+```bash
+dnp get-config --domain dnsproof.org
+```
+By default:
+- Prints the stored configuration to stdout  
+
+Optional:
+- Use --output <path> to save it to a file  
+
+This is useful for auditing, backups, or syncing local files with the backend source of truth.
+
+### Get-domains  
+List all registered domains along with their configuration summary.
+```bash
+dnp get-domains
+```
+This command shows:
+- Domain name
+- Primary nameserver (e.g. `ns1.dnsproof.org`)
+- All configured NS names (FQDNs)
+- Their corresponding IP addresses
+
+Use this to audit your managed domains and confirm config consistency across the system.
 
 ## Zone File Operations  
 
@@ -222,13 +307,22 @@ dnp dnssec-auto-resign --domain dnsproof.org --state off
 - State is stored on agent VM
 - Safe default: enabled
 
+### dnssec-disable  
+Disable DNSSEC for the domain.
+```bash
+dnp dnssec-disable --domain dnsproof.org
+```
+- Removes the DNSSEC keys from nameservers
+- Signs the zone without DNSSEC keys
+- Logs key deletion
 
 ## Nameserver Operations
 
-Inspect and verify nameserver behavior across three layers:  
-- Configured: what you defined in dns_config.yaml
-- Live response: what your nameservers are actually serving
-- Delegation: what the global DNS hierarchy believes
+Inspect and verify nameserver behavior across four layers:  
+- **Configured**: what you defined in dns_config.yaml
+- **Agent Status**:  Whether your authoritative nameserver (CoreDNS/NSD) is running as expected (active/inactive/timeout)
+- **Live response**: what your nameservers are actually serving
+- **Delegation**: what the global DNS hierarchy believes
 
 ### nameserver  
 Show the nameservers you’ve configured in `dns_config.yaml`.
@@ -237,6 +331,47 @@ dnp nameserver --domain dnsproof.org
 ```
 - Reflects your intended setup (e.g. `ns1.dnsproof.org`, `ns2.dnsproof.org`)
 - Used internally for provisioning and zone deployment
+
+### ns-status
+Check authoritative nameserver health (CoreDNS/NSD) across all agent VMs for a domain.
+```bash
+dnp ns-status --domain dnsproof.org
+```
+This command:
+- Sends a status check to each agent
+- Verifies whether the local nameserver (CoreDNS or NSD) is currently running
+- Returns the overall status along with per-IP results
+
+Use this to:
+- Debug downtime or unexpected zone propagation delays
+- Monitor resolver process uptime across your nameserver cluster
+- Validate agent responsiveness before a deployment
+
+**Output (human-readable):**  
+```bash
+Domain: dnsproof.org
+Overall Status: Healthy
+Details: 2/ 2
+----------------------------------------
+1.2.3.4 - active
+5.6.7.8 - active
+```
+If one or more agents are unresponsive:
+```bash
+Domain: dnsproof.org
+Overall Status: Issue Detected
+Details: 1/ 2
+----------------------------------------
+1.2.3.4 - active
+5.6.7.8 - timeout
+Error: Agent VM unreachable
+```
+
+**Optional:**  
+Use --json or -j to output structured data:
+```bash
+dnp ns-status -d dnsproof.org -j
+```
 
 ### verify-ns  
 Query your configured nameservers directly and verify their zone content.

@@ -1,0 +1,26 @@
+version: '3.9'
+
+services:
+  app:
+    build: ./app
+    container_name: dnsproof-app
+    ports:
+      - "8000:8000"
+    environment:
+      - AGENT_SECRET=${AGENT_SECRET}
+      - DNSPROOF_PASSWORD=${DNSPROOF_PASSWORD}
+    volumes:
+      - ./dns_config.yaml:/app/dns_config.yaml
+      - ./app/json:/app/json
+      - ./dnsproof.db:/dnsproof.db
+
+  agent:
+    build: ./dnsagent
+    container_name: dnsproof-agent
+    ports:
+      - "8001:8000"
+    environment:
+      - AGENT_SECRET=${AGENT_SECRET}
+    volumes:
+      - ./dns_config.yaml:/dnsagent/dns_config.yaml
+      - ./dnsagent/json:/dnsagent/json

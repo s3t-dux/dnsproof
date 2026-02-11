@@ -20,7 +20,9 @@
   Easily inspect historical changes through a simple web UI or command line.
 
 - **Reproducibility manifest**  
-  Docker Compose-based environments and planned Nix Flake support for bit-for-bit identical deployments.
+  To spin up the DNSProof CLI and backend using Docker or Nix:  
+  
+  [docker-nix/](./docker-nix/)
 
 ## Why DNSProof?
 
@@ -43,17 +45,24 @@ DNSProof is actively evolving from StackDNS's live infrastructure. The current p
 - A fully working CLI (`dnp.py`) for DNS record control, DNSSEC, logs, and zone management  
 - Sample configuration files, demo logs, and developer documentation
 
+## ▶ DNSProof CLI Demo (90s)
+
+A 90-second walkthrough of the full lifecycle: config generation, nameserver provisioning, DNS record changes, DNSSEC, and verifiable logs.
+
+[Watch: DNSProof_CLI_demo.mp4](https://storage.googleapis.com/dnsproof-assets/DNSProof_CLI_demo.mp4)
+
 ## Preview Resources
 
 The following files are now available in this repository:
 
-- `dnp.py` — CLI entrypoint for DNS management and log verification  
-- `docs/cli.md` — Full documentation for the `dnp` CLI  
+- `cli/dnp.py` — CLI entrypoint for DNS management and log verification  
+- `DNSProof_CLI_demo.mp4` — 90s CLI demo showcasing the full config–deploy–verify cycle.  
+- `docker-nix/` — Reproducible tools and envs with Docker and Nix  
 - `examples/dns_config.yaml` — Sample configuration file  
 - `examples/dnsproof.org.json` — Example zone file format  
 - `examples/demo_logs.json` — Realistic signed DNS change logs  
 
-These illustrate the reproducibility, auditability, and developer experience behind DNSProof’s approach.
+These illustrate DNSProof’s focus on reproducibility, auditability, and developer-first UX.
 
 A short video demo is also available at: [https://stackdns.io/nlnetdemo](https://stackdns.io/nlnetdemo)
 

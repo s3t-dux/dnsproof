@@ -568,6 +568,50 @@ def get_nameservers(ctx, as_json, domain):
     r = api_call(httpx.get, f"{API_URL}/api/ns/nameservers/{domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
+@cli.command('ns-status')
+@json_option()
+@click.option('--domain', '-d', required=True, help="Domain to query for resolver health")
+@requires_auth
+def ns_status(ctx, as_json, domain):
+    """Check CoreDNS/NSD status on all agent VMs for a given domain"""
+    try:
+        payload = {"domain": domain.strip().lower()}
+        r = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/nameserver-status",
+            json=payload,
+            headers=make_headers(ctx)
+        )
+        result = r.json()
+
+        if as_json:
+            click.echo(json.dumps(result, indent=2))
+            return
+
+        click.echo(f"Domain: {result['domain']}")
+        click.echo(f"Overall Status: {'Healthy' if result['is_active'] else 'Issue Detected'}")
+        click.echo(f"Details: {result['status_details']}")
+        click.echo("-" * 40)
+
+        for entry in result['results']:
+            ip = entry["ip"]
+            status = entry["status"]
+            if status == "active":
+                label = "[OK]"
+            elif status == "inactive":
+                label = "[DOWN]"
+            elif status == "timeout":
+                label = "[TIMEOUT]"
+            else:
+                label = "[ERROR]"
+
+            click.echo(f"{label} {ip} - {status}")
+            if entry.get("error"):
+                click.echo(f"    Error: {entry['error']}")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to check nameserver status: {e}")
+
 @cli.command('hostsync')
 @json_option()
 @click.option('--platform', '-p', required=True, type=click.Choice(['windows', 'unix']))
@@ -612,56 +656,92 @@ def hostsync(as_json, platform, config):
     except Exception as e:
         click.echo(f"[ERROR] Failed to update hosts file: {e}")
         raise click.Abort()
-    
-@cli.command('install')
-@click.option('--config', '-c', required=True, type=click.Path(exists=True), help="Path to dns_config.yaml")
-@click.option('--agent-secret', '-s', required=True, help="Shared HMAC secret for agent authentication")
+
+@cli.command("install")
+@click.option("--config", "-c", required=True, type=click.Path(exists=True), help="Path to dns_config.yaml")
+@click.option("--agent-secret", "-s", required=True, help="Shared HMAC secret for agent authentication")
 def install_nameservers(config, agent_secret):
-    """Provision a nameserver VM using ns_provision.sh"""
+    """
+    Provision a nameserver VM using Python-based provisioner.
+    """
+    click.echo("[INFO] Starting nameserver provisioning via Python provisioner")
+    click.echo(f"  Config:        {Path(config).resolve()}")
+    click.echo(f"  Agent Secret:  (hidden)")
+    click.echo("-" * 60)
+
     try:
-        script_path = Path("ns_provision.sh").resolve()
-        if not script_path.exists():
-            raise click.ClickException(f"Missing provisioning script at: {script_path}")
+        # Import locally to avoid import-time side effects
+        from cli import provision
 
-        click.echo(f"[INFO] Running nameserver provisioning script...")
-        click.echo(f"  Config:        {config}")
-        click.echo(f"  Agent Secret:  (hidden)")
-        click.echo("-" * 60)
-
-        process = subprocess.Popen(
-            ["bash", str(script_path), "--config", str(Path(config).resolve()), "--agent-secret", agent_secret],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
+        # Call provisioner entrypoint
+        provision.main(
+            config_path=str(Path(config).resolve()),
+            agent_secret=agent_secret,
         )
 
-        for line in iter(process.stdout.readline, ''):
-            click.echo(line.strip())
+        click.echo("[SUCCESS] Nameserver provisioned successfully.")
 
-        process.stdout.close()
-        return_code = process.wait()
-
-        if return_code != 0:
-            click.echo(f"[ERROR] Script exited with code {return_code}")
-            raise click.Abort()
-
-        # ✅ Step 2: Move FastAPI agent files to /srv/dns
-        click.echo("[INFO] Copying internal DNS agent files to /srv/dns/")
-        os.makedirs("/srv/dns", exist_ok=True)
-        for pyfile in Path("dnsproof").glob("*.py"):
-            dest = Path("/srv/dns") / pyfile.name
-            shutil.copy2(pyfile, dest)
-            os.chown(dest, 0, 0)  # Set root:root ownership
-
-        # ✅ Step 3: Restart agent service
-        click.echo("[INFO] Restarting dnsagent service...")
-        subprocess.run(["systemctl", "restart", "dnsagent"], check=False)
-
-        click.echo("[SUCCESS] Nameserver provisioned and agent restarted.")
+    except PermissionError:
+        click.echo("[FATAL] Permission denied. Did you forget to run with sudo?")
+        raise click.Abort()
 
     except Exception as e:
         click.echo(f"[FATAL] Installation failed: {e}")
         raise click.Abort()
+
+@cli.command("generate-config")
+@click.option("--domain", "-d", required=True, help="Base domain (e.g., example.org)")
+@click.option("--primary-ns", "-p", required=True, help="Primary nameserver name (e.g., ns1)")
+@click.option("--ns", "-n", multiple=True, required=True, help="Nameserver entry in the format name:ip (e.g., ns1:1.2.3.4)")
+@click.option("--output", "-o", default="dns_config.yaml", help="Output path for config file")
+@click.option("--resolver", type=click.Choice(["nsd", "coredns"]), default="nsd", show_default=True, help="DNS resolver to use (nsd or coredns)")
+@click.option("--tls-enabled", is_flag=True, default=False, help="Enable TLS communication with agents")
+@click.option("--agent-cert-path-ns", default="/etc/ssl/dnsproof", show_default=True, help="Cert path on the nameserver")
+@click.option("--agent-cert-path-app", default="../tls_cert", show_default=True, help="Cert path on the app backend")
+def generate_config(domain, primary_ns, ns, output, resolver, tls_enabled, agent_cert_path_ns, agent_cert_path_app):
+    """
+    Generate a basic dns_config.yaml file using domain and nameserver info.
+    """
+    import yaml
+    from pathlib import Path
+
+    try:
+        nameservers = {}
+        for entry in ns:
+            if ':' not in entry:
+                raise click.BadParameter(f"Invalid --ns format: {entry}. Expected name:ip")
+            name, ip = entry.split(":", 1)
+            nameservers[name] = {"ip": ip}
+
+        config = {
+            "domain": domain.strip().lower(),
+            "primary_ns": primary_ns.strip(),
+            "nameservers": nameservers,
+            "resolver": resolver,
+            "tls_enabled": tls_enabled,
+        }
+        if tls_enabled:
+            config["agent_cert_path_ns"] = agent_cert_path_ns
+            config["agent_cert_path_app"] = agent_cert_path_app
+
+        out_path = Path(output)
+        if out_path.exists():
+            click.echo(f"[WARNING] {output} already exists.")
+            if not click.confirm("Overwrite it?"):
+                click.echo("Aborted.")
+                return
+
+        with open(out_path, "w") as f:
+            yaml.safe_dump(config, f, sort_keys=False)
+
+        click.echo(f"[SUCCESS] Config written to {out_path}")
+
+        if "Program Files/Git" in agent_cert_path_ns.replace("\\", "/"):
+            click.echo("[WARN] Detected Git Bash path translation. You may want to use /c/srv/certs or C:\\srv\\certs to avoid surprises.")
+
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to generate config: {e}")
 
 @cli.command('generate-agent-secret')
 @click.option('--output', '-o', default="agent.secret", type=click.Path(), help="File to save the generated secret")
@@ -775,10 +855,13 @@ def init(ctx, config, output):
         click.echo(f"[INIT] Zone file initialized at: {out_path}")
 
         # Register domain with backend
+        with open(config) as f:
+            cfg_text = f.read()
+
         r = api_call(
             httpx.post,
             f"{API_URL}/api/dns/register-domain",
-            json={"domain": domain},
+            json={"domain": domain, "config_yaml": cfg_text},
             headers=make_headers(ctx)
         )
         result = r.json()
@@ -792,6 +875,102 @@ def init(ctx, config, output):
             click.echo(f"[REGISTER] Unknown registration response: {result}")
     except Exception as e:
         click.echo(f"[ERROR] Failed to initialize: {e}")
+
+@cli.command("set-config")
+@click.option('--file', '-f', type=click.Path(exists=True), required=True, help="Path to dns_config.yaml")
+@requires_auth
+def set_config(ctx, file):
+    """Set or update DNS config YAML for a domain"""
+    import yaml
+
+    try:
+        with open(file, "r") as f:
+            config_text = f.read()
+            config_data = yaml.safe_load(config_text)
+
+        domain = config_data.get("domain")
+        if not domain:
+            click.echo("[ERROR] 'domain' field missing from config YAML")
+            raise click.Abort()
+
+        payload = {
+            "domain": domain.strip().lower(),
+            "config_yaml": config_text
+        }
+
+        r = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/set-config", 
+            json=payload,
+            headers=make_headers(ctx)
+        )
+
+        result = r.json()
+        click.echo(f"[SET-CONFIG] Domain: {domain}")
+        click.echo(f"[SET-CONFIG] Status: {result.get('status')}")
+        if result.get("status") == "updated":
+            click.echo("[SET-CONFIG] Config successfully stored.")
+        else:
+            click.echo("[SET-CONFIG] No config provided or update skipped.")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to set config: {e}")
+        raise click.Abort()
+
+@cli.command("get-config")
+@click.option('--domain', '-d', required=True, help="Domain to fetch stored config for")
+@click.option('--output', '-o', type=click.Path(writable=True), default=None, help="Optional path to save config file")
+@requires_auth
+def get_config(ctx, domain, output):
+    """Fetch stored dns_config.yaml from backend DB"""
+    try:
+        r = api_call(
+            httpx.get,
+            f"{API_URL}/api/dns/get-config",
+            headers=make_headers(ctx),
+            params={"domain": domain}
+        )
+        result = r.json()
+        yaml_text = result["config_yaml"]
+
+        if output:
+            with open(output, "w") as f:
+                f.write(yaml_text)
+            click.echo(f"[GET-CONFIG] Config for {domain} saved to {output}")
+        else:
+            click.echo(f"# Stored config for {domain} (last updated {result['updated_at']}):\n")
+            click.echo(yaml_text)
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to get config: {e}")
+        raise click.Abort()
+
+@cli.command('get-domains')
+@json_option()
+@requires_auth
+def get_domains(ctx, as_json):
+    "List all registered domains and their NS info"
+    try:
+        r = api_call(httpx.get, f"{API_URL}/api/dns/get-domains", headers=make_headers(ctx))
+        data = r.json()
+
+        if as_json:
+            print_output(r, as_json)
+            return
+
+        for entry in data.get("domains", []):
+            if "error" in entry:
+                click.echo(f"[ERROR] {entry['domain']}: {entry['error']}")
+                continue
+
+            click.echo(f"Domain:      {entry['domain']}")
+            click.echo(f"Primary NS:  {entry.get('primary_ns', '-')}")
+            click.echo(f"NS Names:    {', '.join(entry.get('nameservers', []))}")
+            click.echo(f"NS IPs:      {', '.join(entry.get('ips', []))}")
+            click.echo("-" * 40)
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to fetch domain list: {e}")
 
 @cli.command("deregister")
 @click.option('--domain', '-d', required=True, help="Domain to deregister")
