@@ -399,6 +399,50 @@ dnp ns-propagation --domain dnsproof.org
 | `dnp verify-ns`      | Direct query           | Your actual nameservers    | What your NS *is currently serving*   |
 | `dnp ns-propagation` | Delegation trace       | DNS hierarchy (root → TLD) | What the *world sees* via delegation  |
 
+## Signing Key  
+
+### Show Active Signing Key  
+Displays metadata for the currently active DNS record signing key.  
+This key is used to cryptographically sign all DNS change log entries (DNSChangeLog). Only one signing key should be active at any given time.
+```bash
+dnp signing-key
+```
+The active key includes:
+- ID — Internal key lifecycle identifier
+- Created — Timestamp of key generation
+- Type — Key category (e.g., dns_record)
+- Purpose — Optional key purpose metadata
+- Fingerprint — SHA-256 hash of the public key
+- Public Key — Base64-encoded Ed25519 public key
+- Key Path — Local filesystem path of the private key
+
+Example:
+```bash
+$ dnp signing-key
+
+Active Signing Key
+------------------
+ID          : a91c21...
+Created     : 2026-02-15T08:12:03
+Type        : dns_record
+Purpose     : None
+Fingerprint : 7d8e4c...
+Public Key  : Gk3...
+Key Path    : /home/user/.dnsproof/signing_key
+```
+
+### Rotate Signing Key  
+Rotates the local DNS record signing key used for cryptographically signing DNS change logs.
+```bash
+dnp signing-rotate
+```
+This command:
+- Revokes the currently active signing key
+- Generates a new Ed25519 signing key
+- Creates a timestamped backup of the previous key on disk
+- Preserves full lifecycle history in the database
+- User `--force` or `-f` to skip the confirmation prompt
+
 ## Logs  
 
 View and verify cryptographically signed logs across three layers:

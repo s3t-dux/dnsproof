@@ -1,20 +1,23 @@
 [
   {
-    "record_type": "TXT",
-    "id": "511fbed5-8c17-43b4-a70a-d70b7684840f",
-    "record_value": "world",
-    "priority": null,
-    "full_snapshot": "{\"name\": \"hello\", \"ttl\": 3600, \"type\": \"TXT\", \"value\": \"world\"}",
-    "signature": "rEVlNldMec6uxHB6OkGVhZ4IYjss5hEBMVumsCAAWu97mTWvXwS4FMKO7sxzucdjcRV+4XsZkSkJFIxWc8J7Cg==",
-    "ip_address": "127.0.0.1",
-    "created_at": "2026-01-19T09:41:07.921392",
-    "domain": "dnsproof.org",
-    "action": "add",
-    "record_name": "hello",
+    "record_value": "test",
+    "signature": "cqf3wtUMsIl8YkcXpBQ+dHlnBmKAjd+Y9q+6xC5DbTEPe2Cy96Os+3oGCbPP7GnqWkO6oHqk0Lyt1pl1KhQkAQ==",
     "ttl": 3600,
+    "public_key": "S18nD/ytMRkDCa4YLw5i8i7Cs4qDhem6dncpyF7WJ+M=",
+    "priority": null,
+    "user_id": "system",
+    "domain": "dnsproof.org",
     "proxied": null,
-    "snapshot_hash": "91a9f2d3ab908db6e9e7218272998599ff9ad59eafedee822ab4977db60633d6",
-    "public_key": "VioR9OTn0jJeFKdFkmaGTTbKWhQj4qJFufr6iukrlAs=",
-    "user_agent": null
+    "ip_address": "127.0.0.1",
+    "id": "f175e7e7-9739-4057-bab1-764013aca5ee",
+    "full_snapshot": "{\"name\": \"hello\", \"ttl\": 3600, \"type\": \"TXT\", \"value\": \"test\"}",
+    "user_agent": null,
+    "action": "add",
+    "old_snapshot": "null",
+    "created_at": "2026-02-17T12:39:55.676355",
+    "record_type": "TXT",
+    "snapshot_timestamp": "2026-02-17T12:39:55.675677+00:00",
+    "record_name": "hello",
+    "snapshot_hash": "5f4b024d827c4f7a13552c5e072bf33eed028d3fd5728b32e936be484a9f6bce"
   }
 ]

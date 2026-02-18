@@ -10,6 +10,7 @@ import tempfile
 import yaml
 import getpass
 from pathlib import Path
+from functools import wraps
 
 API_URL = os.getenv("DNSPROOF_API_URL", "http://localhost:8000")
 API_PASSWORD = os.getenv("DNSPROOF_PASSWORD", "")
@@ -73,6 +74,7 @@ def make_headers(ctx):
     return {"Authorization": f"Bearer {ctx.api_password}"} if ctx.api_password else {}
 
 def requires_auth(fn):
+    @wraps(fn)
     @pass_dnp
     def wrapper(ctx, *args, **kwargs):
         if not ctx.api_password:
@@ -141,7 +143,7 @@ def records(ctx, as_json, domain, rtype):
 @click.option('--ttl', default=3600, show_default=True)
 @requires_auth
 def add_record(ctx, as_json, domain, rtype, name, value, ttl):
-    "Add a DNS record"
+    """Add a DNS record"""
     payload = {
         "domain": domain,
         "records": [{
@@ -531,6 +533,93 @@ def verify_log_offline(file):
 
     except Exception as e:
         click.echo(f"[ERROR] Could not read or parse file: {e}")
+
+@cli.command("signing-key")
+@json_option()
+@requires_auth
+def signing_key(ctx, as_json):
+    """
+    Show the currently active signing key metadata.
+
+    Displays the active (non-revoked) signing key
+    from KeyGenerationLog.
+    """
+    try:
+        url = f"{API_URL}/api/signing/active-key"
+        r = api_call(httpx.get, url, headers=make_headers(ctx))
+
+        if as_json:
+            print_output(r, as_json)
+            return
+
+        key = r.json()
+
+        click.echo("")
+        click.echo("Active Signing Key")
+        click.echo("------------------")
+        click.echo(f"ID          : {key.get('id')}")
+        click.echo(f"Created     : {key.get('created_at')}")
+        click.echo(f"Type        : {key.get('key_type')}")
+        click.echo(f"Purpose     : {key.get('purpose')}")
+        click.echo(f"Fingerprint : {key.get('fingerprint')}")
+        click.echo(f"Public Key  : {key.get('public_key')}")
+        click.echo(f"Key Path    : {key.get('key_path')}")
+        click.echo("")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to fetch signing key: {e}")
+
+
+@cli.command("signing-rotate")
+@json_option()
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
+@requires_auth
+def signing_rotate(ctx, force, as_json):
+    """
+    Rotate the DNS record signing key.
+
+    This revokes the currently active signing key,
+    generates a new Ed25519 key,
+    and preserves a timestamped backup of the old key.
+
+    This action is irreversible.
+    """
+    if not force:
+        click.echo("")
+        click.echo("WARNING: You are about to rotate the DNS signing key.")
+        click.echo("This will:")
+        click.echo("  • Revoke the currently active signing key")
+        click.echo("  • Generate a new Ed25519 key")
+        click.echo("  • Create a timestamped backup of the old key")
+        click.echo("")
+        click.echo("This action cannot be undone.")
+        click.echo("")
+
+        confirm = click.prompt("Proceed? (y/N)", default="N")
+
+        if confirm.lower() != "y":
+            click.echo("Aborted.")
+            return
+
+    try:
+        url = f"{API_URL}/api/signing/rotate"
+        r = api_call(httpx.post, url, headers=make_headers(ctx))
+        
+        data = r.json()
+
+        if as_json:
+            print_output(r, as_json)
+            return
+
+        click.echo("")
+        click.echo("[SUCCESS] Signing key rotated successfully")
+        click.echo(f"Old Key ID : {data.get('old_key_id')}")
+        click.echo(f"New Key ID : {data.get('new_key_id')}")
+        click.echo(f"Backup Path: {data.get('backup_path')}")
+        click.echo("")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Signing key rotation failed: {e}")
 
 @cli.command('verify-ns')
 @json_option()

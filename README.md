@@ -5,7 +5,7 @@
 ## Key Features
 
 - **Deterministic DNS change logs**  
-  Track every DNS record update with cryptographic integrity and timestamped history.
+  Track every DNS record update with deterministic, cryptographically verifiable history.
 
 - **DNSSEC made practical**  
   Integrated DNSSEC support with automatic zone signing and key management.
@@ -62,7 +62,35 @@ The following files are now available in this repository:
 - `examples/dnsproof.org.json` — Example zone file format  
 - `examples/demo_logs.json` — Realistic signed DNS change logs  
 
-These illustrate DNSProof’s focus on reproducibility, auditability, and developer-first UX.
+These illustrate DNSProof’s focus on reproducibility, auditability, and developer-first UX.  
+
+### Offline Log Verification  
+DNSProof logs can be verified independently of the backend.  
+Each DNS change is signed using Ed25519 over a deterministic, canonical snapshot:  
+```json
+{
+  "timestamp": ...,
+  "domain": ...,
+  "action": ...,
+  "record": ...,
+  "user_id": ...,
+  "ip_address": ...
+}
+```
+The snapshot is serialized with `sort_keys=True`, hashed with SHA256, and signed.  
+The resulting `snapshot_hash`, `signature`, and `public_key` are stored alongside the log entry.  
+You can verify a log entry offline using:  
+```bash
+python examples/verify_log_offline.py examples/demo_logs.json
+```
+Example output:
+```bash
+Log ID: 511fbed5-...
+[OK] Snapshot integrity verified
+[OK] Signature authenticity verified
+```
+This process does not require a running DNSProof backend or database.  
+Verification depends only on deterministic serialization and standard Ed25519 cryptography.  
 
 A short video demo is also available at: [https://stackdns.io/nlnetdemo](https://stackdns.io/nlnetdemo)
 
