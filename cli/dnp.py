@@ -91,6 +91,13 @@ def cli(ctx, api_url, password):
     ctx.api_url = api_url or os.getenv("DNSPROOF_API_URL", API_URL)
     ctx.api_password = password or os.getenv("DNSPROOF_PASSWORD")
 
+@click.group()
+def signing():
+    """Signing key lifecycle commands."""
+    pass
+
+cli.add_command(signing)
+
 @cli.command('records')
 @json_option()
 @click.option('--domain', '-d', required=True, help="Domain name to query")
@@ -534,12 +541,12 @@ def verify_log_offline(file):
     except Exception as e:
         click.echo(f"[ERROR] Could not read or parse file: {e}")
 
-@cli.command("signing-key")
+@signing.command("active-key")
 @json_option()
 @requires_auth
-def signing_key(ctx, as_json):
+def active_key(ctx, as_json):
     """
-    Show the currently active signing key metadata.
+    Show the currently active (non-revoked) signing key metadata.
 
     Displays the active (non-revoked) signing key
     from KeyGenerationLog.
@@ -569,8 +576,77 @@ def signing_key(ctx, as_json):
     except Exception as e:
         click.echo(f"[ERROR] Failed to fetch signing key: {e}")
 
+@signing.command("keys")
+@json_option()
+@requires_auth
+def signing_key(ctx, as_json):
+    """
+    Show signing key lifecycle.
 
-@cli.command("signing-rotate")
+    - In JSON mode: return the active key only.
+    - In human mode: show active key + revoked history.
+    """
+    try:
+        headers = make_headers(ctx)
+
+        if as_json:
+            # Preserve old behavior: just active key as JSON
+            url = f"{API_URL}/api/signing/active-key"
+            r = api_call(httpx.get, url, headers=headers)
+            print_output(r, as_json)
+            return
+
+        # Human-readable: fetch full lifecycle
+        url = f"{API_URL}/api/signing/keys"
+        r = api_call(httpx.get, url, headers=headers)
+        keys = r.json()
+
+        if not keys:
+            click.echo("No signing keys found.")
+            return
+
+        active = [k for k in keys if not k.get("revoked")]
+        revoked = [k for k in keys if k.get("revoked")]
+
+        if len(active) != 1:
+            click.echo("[ERROR] Invariant violation: expected exactly one active key.")
+            click.echo(f"Active candidates found: {len(active)}")
+            # Optionally dump raw JSON for debugging:
+            # click.echo(json.dumps(keys, indent=2))
+            return
+
+        ak = active[0]
+
+        click.echo("")
+        click.echo("Active Signing Key")
+        click.echo("------------------")
+        click.echo(f"ID          : {ak.get('id')}")
+        click.echo(f"Created     : {ak.get('created_at')}")
+        click.echo(f"Type        : {ak.get('key_type')}")
+        click.echo(f"Purpose     : {ak.get('purpose')}")
+        click.echo(f"Fingerprint : {ak.get('fingerprint')}")
+        click.echo(f"Public Key  : {ak.get('public_key')}")
+        click.echo(f"Key Path    : {ak.get('key_path')}")
+        click.echo(f"Replaced By : {ak.get('replaced_by')}")
+        click.echo("")
+
+        if revoked:
+            click.echo("Revoked Keys")
+            click.echo("------------")
+            for rk in revoked:
+                click.echo(
+                    f"- ID={rk.get('id')}, "
+                    f"created={rk.get('created_at')}, "
+                    f"revoked_at={rk.get('revoked_at')}, "
+                    f"replaced_by={rk.get('replaced_by')}, "
+                    f"fingerprint={rk.get('fingerprint')}"
+                )
+            click.echo("")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to fetch signing key lifecycle: {e}")
+
+@signing.command("rotate")
 @json_option()
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
 @requires_auth

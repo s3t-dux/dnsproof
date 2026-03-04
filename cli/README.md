@@ -405,7 +405,7 @@ dnp ns-propagation --domain dnsproof.org
 Displays metadata for the currently active DNS record signing key.  
 This key is used to cryptographically sign all DNS change log entries (DNSChangeLog). Only one signing key should be active at any given time.
 ```bash
-dnp signing-key
+dnp signing active-key
 ```
 The active key includes:
 - ID — Internal key lifecycle identifier
@@ -418,7 +418,7 @@ The active key includes:
 
 Example:
 ```bash
-$ dnp signing-key
+$ dnp signing active-key
 
 Active Signing Key
 ------------------
@@ -431,10 +431,41 @@ Public Key  : Gk3...
 Key Path    : /home/user/.dnsproof/signing_key
 ```
 
+### List All Signing Keys  
+Shows the full signing key lifecycle, including the active key and all revoked keys.
+```bash
+dnp signing keys
+```
+This command is useful for auditing key continuity.
+It displays:
+- The current active signing key
+- All previously used keys
+- Revocation timestamps (revoked_at)
+- Replacement links (replaced_by)
+Example:
+```bash
+$ dnp signing keys
+
+Active Signing Key
+------------------
+ID          : a91c21...
+Created     : 2026-02-15T08:12:03
+Fingerprint : 7d8e4c...
+
+Revoked Keys
+------------
+- ID=b73fa9..., revoked_at=2026-02-15T08:12:03, replaced_by=a91c21...
+- ID=89ff12..., revoked_at=2026-02-10T04:55:28, replaced_by=b73fa9...
+```
+Use this to verify that:
+- Exactly one key is active
+- All previous keys are correctly revoked
+- The signing lineage forms a continuous chain
+
 ### Rotate Signing Key  
 Rotates the local DNS record signing key used for cryptographically signing DNS change logs.
 ```bash
-dnp signing-rotate
+dnp signing rotate
 ```
 This command:
 - Revokes the currently active signing key
