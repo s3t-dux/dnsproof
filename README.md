@@ -61,6 +61,8 @@ The following files are now available in this repository:
 - `examples/dns_config.yaml` — Sample configuration file  
 - `examples/dnsproof.org.json` — Example zone file format  
 - `examples/demo_logs.json` — Realistic signed DNS change logs  
+- `examples/canonical_snapshot_demo.py` — Demonstrates canonical JSON serialization and SHA-256 hashing for DNS change snapshots  
+- `examples/verify_log_offline.py` — Full offline integrity check: deterministic snapshot reconstruction + Ed25519 signature verification
 
 These illustrate DNSProof’s focus on reproducibility, auditability, and developer-first UX.  
 
@@ -79,7 +81,7 @@ Each DNS change is signed using Ed25519 over a deterministic, canonical snapshot
 ```
 The snapshot is serialized with `sort_keys=True`, hashed with SHA256, and signed.  
 The resulting `snapshot_hash`, `signature`, and `public_key` are stored alongside the log entry.  
-You can verify a log entry offline using:  
+To verify a set of exported log entries:  
 ```bash
 python examples/verify_log_offline.py examples/demo_logs.json
 ```
@@ -89,9 +91,50 @@ Log ID: 511fbed5-...
 [OK] Snapshot integrity verified
 [OK] Signature authenticity verified
 ```
+For readers who want to understand the hashing rule in isolation, a minimal example is available:
+```bash
+python examples/canonical_snapshot_demo.py
+```
+It demonstrates the exact canonical serialization and hashing behavior used throughout DNSProof.
+
 This process does not require a running DNSProof backend or database.  
 Verification depends only on deterministic serialization and standard Ed25519 cryptography.  
 
-A short video demo is also available at: [https://stackdns.io/nlnetdemo](https://stackdns.io/nlnetdemo)
+### Log Integrity & Cryptographic Guarantees
 
-Want early access to the backend code? [Open an issue](https://github.com/s3t-dux/dnsproof/issues) or reach out via the contact form at [stackdns.io](https://stackdns.io).
+DNSProof maintains a cryptographically verifiable, append-only change log for all DNS modifications.
+Each DNS update is recorded with:
+- canonical JSON snapshot
+- SHA-256 snapshot hash
+- Ed25519 signature
+- optional Merkle anchoring (Spec v1.1)
+- strict key lifecycle tracking
+
+This enables offline verification, tamper detection, and trust-minimized auditing.  
+
+Full specification and verification instructions are documented in:
+
+[`docs/log_integrity.md`](docs/log_integrity.md)
+
+---
+
+### Experimental Merkle Log Anchoring
+
+DNSProof also includes an experimental module exploring Merkle-based
+anchoring of ordered `DNSChangeLog.snapshot_hash` values. This is not
+part of the core trust model, but serves as forward-looking research on
+structurally verifiable append-only histories.
+
+The implementation and documentation are available under:
+- `experiments/merkle_log.py`
+- `experiments/verify_merkle_dns.py`
+- `experiments/README.md`
+
+These tools allow you to compute a local Merkle root, generate inclusion
+proofs, and optionally compare the local root with a published
+`_merkle.<domain>` TXT record. The experiment is intentionally isolated
+from production signing logic.
+
+---
+
+A short video demo is also available at: [https://stackdns.io/nlnetdemo](https://stackdns.io/nlnetdemo)
