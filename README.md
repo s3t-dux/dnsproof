@@ -118,6 +118,22 @@ Full specification and verification instructions are documented in:
 
 ---
 
+### Deterministic Zone Reconstruction
+
+DNSProof’s signed snapshots record *how* DNS changes were made, but a verifier must also understand
+*how these changes accumulate into authoritative DNS state*. To support independent auditing, the
+project now includes a formal specification of “zone state” and a deterministic reconstruction model.
+
+This document does not introduce a new algorithm; rather, it makes explicit the rules that any
+verifier can use to reconstruct a zone from its full history of signed mutations—similar to how a
+ledger can be replayed into an account balance.
+
+The specification is available here:
+
+[`docs/deterministic_zone_reconstruction.md`](docs/deterministic_zone_reconstruction.md)
+
+---
+
 ### Experimental Merkle Log Anchoring
 
 DNSProof also includes an experimental module exploring Merkle-based
