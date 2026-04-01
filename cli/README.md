@@ -43,6 +43,99 @@ dnp dnssec-enable --domain dnsproof.org -j
 ```
 Use `--json` (or `-j`) to print raw output with spacing.
 
+## Conceptual Model
+DNSProof separates domain management into three distinct layers:
+```
+config (YAML)  → infrastructure intent
+zone (JSON)    → DNS state
+logs           → mutation history
+```
+
+### Config (dns_config.yaml)
+- Defines infrastructure intent
+- Nameservers, resolver type, TLS settings, agent paths
+- Stored in the backend as the authoritative configuration
+
+This answers:
+> Where and how should this domain be served?
+
+### Zone (JSON)
+- Defines the current DNS state
+- Fully resolved, canonical representation of all records
+- Edited locally and pushed to nameservers
+
+This answers:
+> What records should exist right now?
+
+### Logs
+- Record all mutations (add, edit, delete, push-*)
+- Cryptographically signed for auditability
+- Can be verified independently of the backend
+
+This answers:
+> How did the state change over time?
+
+### Why this separation matters
+- Config changes do **not** automatically affect DNS state
+- Zone changes do **not** modify infrastructure
+- Logs provide a verifiable history independent of both
+
+This separation enables:
+- reproducible deployments
+- safe configuration updates
+- auditability without trusting the control plane
+
+## End-to-End Domain Lifecycle
+DNSProof is designed around a **portable, reproducible domain lifecycle**.  
+The workflow below shows the complete flow in practice.
+
+```bash
+# 1. Generate config
+dnp generate-config --domain example.org --output dns_config.yaml
+
+# 2. Initialize domain (register + create starter zone)
+dnp init --config dns_config.yaml
+
+# 3. Modify zone locally
+vim example.org.json
+
+# 4. Deploy to nameservers
+dnp push-zone --zone-json example.org.json
+
+# 5. Export portable bundle
+dnp export-domain --domain example.org --output bundle/
+
+# 6. Recover elsewhere (or rehydrate state)
+dnp import-domain \
+  --config bundle/dns_config.yaml \
+  --zone   bundle/example.org.json
+```
+
+### What this demonstrates
+- **Local-first control**
+Zone state is edited locally as JSON, then pushed to nameservers.
+- **Deterministic deployment**
+`push-zone` applies a full canonical state with signed logs.
+- **Portability**
+`export-domain` produces a self-contained bundle:
+  - `dns_config.yaml` (control-plane config)
+  - `<domain>.json` (canonical zone)
+- **Rehydration**
+`import-domain` restores:
+  - domain registration (if missing)
+  - stored configuration
+  - deployed zone state
+
+### Lifecycle model
+DNSProof follows a simple, explicit lifecycle:
+```
+generate-config → init → edit → push → export → import
+```
+This enables:
+- reproducible DNS deployments
+- environment-to-environment migration
+- auditable and portable domain state
+
 ## Installation & Setup
 
 This section covers one-time setup: provisioning nameservers, configuring environment variables, and launching the local backend.
@@ -130,7 +223,10 @@ dnp devserver
 
 ### Init
 
-Initialize domain management by registering the domain and its base configuration with the backend.
+Initialize a domain by performing both:
+
+- **backend registration** (control-plane state)
+- **local bootstrap** (initial zone file)
 ```bash
 dnp init --config dns_config.yaml
 ```
@@ -184,19 +280,26 @@ These commands let you work directly with full zone files in JSON format — eit
 
 Use them for recovery, migration, manual overrides, or version-controlled zone management.  
 
-### Push Zone  
-Push a complete JSON zone file (e.g. dnsproof.org.json) directly to the nameservers.  
+### Push Zone
 
-This command bypasses per-record signing and audit logs — it’s useful for first-time deployment or full-zone overrides.
+Push a complete JSON zone file (e.g. dnsproof.org.json) directly to the nameservers.  
+This command performs a **full state replacement** of the zone.
 ```bash
 dnp push-zone --zone-json dnsproof.org.json
 ```
-- Validates that both domain and records are present in the JSON
-- Logs all records as `push-add` or `push-delete`, with cryptographic signing
+- Treats the provided JSON as the authoritative source of truth
+- Computes differences and logs them as `push-add` / `push-delete`
 - Triggers DNS deployment and DNSSEC signing via the agent API
 
-Use this for bootstrapping, migrations, or restoring from backup.
-For incremental edits, use `add`, `edit`, or `delete`.
+Semantics in comparison:
+
+- `add` / `edit` / `delete` → incremental, record-level mutations
+- `push-zone` → full-state override
+
+Use this for:
+- initial deployment
+- migrations
+- restoring from exported bundles
 
 ### Dump Zone
 Download the current zone JSON from the backend.
@@ -207,10 +310,35 @@ dnp dump-zone --domain dnsproof.org --output dnsproof.org.json
 - Can be redirected to a file or piped for inspection
 - Useful for syncing local state, versioning, or debugging
 
+### Export Domain
+Export a domain as a portable bundle:
+```bash
+dnp export-domain --domain dnsproof.org --output exports/dnsproof.org
+```
+Output:
+```
+dns_config.yaml
+<domain>.json
+```
+- `dns_config.yaml`: control-plane configuration
+- `<domain>.json`: canonical zone state. 
+
+This provides a reconstructible domain snapshot, enabling migration, audit, and deterministic rehydration of DNS state.  
+
+### Import Domain. 
+Restore a domain from a portable bundle:
+```bash
+dnp import-domain --config dns_config.yaml --zone dnsproof.org.json
+```
+Semantics:
+- register if missing
+- update config if present
+- push canonical zone
+
+This rehydrates a domain into a consistent control-plane + zone state.  
 
 ## Record Management  
-
-Manage individual DNS records with real-time deployment and signed audit trails.  
+These commands operate at the **incremental mutation layer**, updating the zone through signed, per-record changes.
 All changes are cryptographically logged for verifiable history and reproducibility.
 
 ### View DNS Records  

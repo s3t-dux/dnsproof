@@ -106,7 +106,9 @@ cli.add_command(signing)
 def records(ctx, as_json, domain, rtype):
     """Get current DNS records from zone file"""
     try:
-        url = f"{API_URL}/api/dns/records?domain={domain}"
+        normalized_domain = domain.strip().lower()
+
+        url = f"{API_URL}/api/dns/records?domain={normalized_domain}"
         r = api_call(httpx.get, url, headers=make_headers(ctx))
         data = r.json()
 
@@ -151,8 +153,11 @@ def records(ctx, as_json, domain, rtype):
 @requires_auth
 def add_record(ctx, as_json, domain, rtype, name, value, ttl):
     """Add a DNS record"""
+
+    normalized_domain = domain.strip().lower()
+
     payload = {
-        "domain": domain,
+        "domain": normalized_domain,
         "records": [{
             "type": rtype,
             "name": name,
@@ -197,6 +202,8 @@ def edit_record(ctx, as_json, domain, record_id, rtype, old_name, old_value, new
         if not record_id and not (rtype and old_name and old_value):
             raise click.UsageError("Either --record-id OR all of --type, --old-name, and --old-value must be provided.")
 
+        normalized_domain = domain.strip().lower()
+
         # Compose new record (after edit)
         new_record = {
             "type": rtype if rtype else "TXT",  # Default to TXT if not specified
@@ -224,7 +231,7 @@ def edit_record(ctx, as_json, domain, record_id, rtype, old_name, old_value, new
             }
 
         payload = {
-            "domain": domain,
+            "domain": normalized_domain,
             "edits": [edit_payload]
         }
 
@@ -250,15 +257,17 @@ def delete_record(ctx, as_json, domain, record_id, rtype, name, value):
                 "Either --record-id OR all of --type, --name, and --value must be provided."
             )
 
+        normalized_domain = domain.strip().lower()
+
         # Backend resolves identity
         if record_id:
             payload = {
-                "domain": domain,
+                "domain": normalized_domain,
                 "record_ids": [record_id]
             }
         else:
             payload = {
-                "domain": domain,
+                "domain": normalized_domain,
                 "records": [{
                     "type": rtype,
                     "name": name,
@@ -285,22 +294,27 @@ def delete_record(ctx, as_json, domain, record_id, rtype, name, value):
 def dump_zone(ctx, domain, output):
     """Fetch and dump the canonical zone JSON file from the app backend."""
     try:
-        r = api_call(httpx.request, 
-                    "GET", 
-                    f"{API_URL}/api/dns/dump/",
-                    headers=make_headers(ctx),
-                    params={"domain": domain}
+        normalized_domain = domain.strip().lower()
+
+        r = api_call(
+            httpx.get,
+            f"{API_URL}/api/dns/dump",
+            headers=make_headers(ctx),
+            params={"domain": normalized_domain}
         )
+
         zone_json = r.json()["zone_json"]
+
         if output:
             with open(output, "w") as f:
                 json.dump(zone_json, f, indent=2)
-            click.echo(f"Zone JSON for '{domain}' written to {output}")
+            click.echo(f"[DUMP-ZONE] Zone JSON for '{normalized_domain}' written to {output}")
         else:
             click.echo(json.dumps(zone_json, indent=2))
 
     except Exception as e:
-        click.echo(f"Error: {e}")
+        click.echo(f"[ERROR] Failed to dump zone: {e}")
+        raise click.Abort()
 
 @cli.command('push-zone')
 @click.option('--zone-json', '-z', type=click.Path(exists=True), required=True, help="Path to zone JSON file (e.g., ./dnsproof.org.json)")
@@ -322,13 +336,242 @@ def push_zone(ctx, as_json, zone_json):
     except Exception as e:
         click.echo(f"Error: {e}")
 
+@cli.command("export-domain")
+@click.option('--domain', '-d', required=True, help="Domain to export")
+@click.option('--output', '-o', type=click.Path(), required=True, help="Directory to write exported files into")
+@requires_auth
+def export_domain(ctx, domain, output):
+    """
+    Export a portable domain bundle:
+    - stored dns_config.yaml from backend
+    - canonical zone JSON from backend
+    """
+    try:
+        normalized_domain = domain.strip().lower()
+        out_dir = Path(output).expanduser().resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        config_path = out_dir / "dns_config.yaml"
+        zone_path = out_dir / f"{normalized_domain}.json"
+
+        # Fetch stored config
+        config_resp = api_call(
+            httpx.get,
+            f"{API_URL}/api/dns/get-config",
+            headers=make_headers(ctx),
+            params={"domain": normalized_domain}
+        )
+        config_result = config_resp.json()
+        config_yaml = config_result["config_yaml"]
+
+        with open(config_path, "w") as f:
+            f.write(config_yaml)
+
+        # Fetch canonical zone
+        zone_resp = api_call(
+            httpx.get,
+            f"{API_URL}/api/dns/dump",
+            headers=make_headers(ctx),
+            params={"domain": normalized_domain}
+        )
+        zone_result = zone_resp.json()
+        zone_json = zone_result["zone_json"]
+
+        with open(zone_path, "w") as f:
+            json.dump(zone_json, f, indent=2)
+
+        click.echo(f"[EXPORT] Domain: {normalized_domain}")
+        click.echo(f"[EXPORT] Config: {config_path}")
+        click.echo(f"[EXPORT] Zone:   {zone_path}")
+        click.echo("[EXPORT] Portable domain bundle written successfully.")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to export domain: {e}")
+        raise click.Abort()
+    
+@cli.command("import-domain")
+@click.option(
+    "--config", "-c",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to dns_config.yaml"
+)
+@click.option(
+    "--zone", "-z",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to exported zone JSON file"
+)
+@click.option(
+    "--force", "-f",
+    is_flag=True,
+    help="Skip confirmation prompt when overwriting an existing domain config/zone"
+)
+@requires_auth
+def import_domain(ctx, config, zone, force):
+    """
+    Import a portable domain bundle into DNSProof.
+
+    Behavior:
+    - If the domain is not registered yet, register it with the imported config.
+    - If the domain already exists, update its stored config with the imported config.
+    - Push the imported canonical zone JSON to the backend/agents.
+    """
+    import yaml
+    import json
+    from pathlib import Path
+
+    try:
+        config_path = Path(config).expanduser().resolve()
+        zone_path = Path(zone).expanduser().resolve()
+
+        # -----------------------------
+        # 1. Load and validate config
+        # -----------------------------
+        with open(config_path, "r") as f:
+            config_text = f.read()
+
+        config_data = yaml.safe_load(config_text) or {}
+        config_domain = config_data.get("domain")
+
+        if not config_domain or not isinstance(config_domain, str):
+            click.echo("[ERROR] 'domain' field missing from config YAML.")
+            raise click.Abort()
+
+        normalized_config_domain = config_domain.strip().lower()
+
+        # -----------------------------
+        # 2. Load and validate zone JSON
+        # -----------------------------
+        with open(zone_path, "r") as f:
+            zone_json = json.load(f)
+
+        if not isinstance(zone_json, dict):
+            click.echo("[ERROR] Zone JSON must be a JSON object.")
+            raise click.Abort()
+
+        zone_domain = zone_json.get("domain")
+        records = zone_json.get("records")
+
+        if not zone_domain or not isinstance(zone_domain, str):
+            click.echo("[ERROR] Zone JSON missing 'domain' field.")
+            raise click.Abort()
+
+        if not isinstance(records, list):
+            click.echo("[ERROR] Zone JSON missing 'records' list.")
+            raise click.Abort()
+
+        normalized_zone_domain = zone_domain.strip().lower()
+
+        if normalized_config_domain != normalized_zone_domain:
+            click.echo("[ERROR] Domain mismatch between config and zone bundle.")
+            click.echo(f"        Config domain: {normalized_config_domain}")
+            click.echo(f"        Zone domain:   {normalized_zone_domain}")
+            raise click.Abort()
+
+        # Normalize zone payload before push
+        zone_json["domain"] = normalized_zone_domain
+
+        # -----------------------------
+        # 3. Attempt registration
+        # -----------------------------
+        register_payload = {
+            "domain": normalized_config_domain,
+            "config_yaml": config_text
+        }
+
+        register_resp = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/register-domain",
+            json=register_payload,
+            headers=make_headers(ctx)
+        )
+
+        register_result = register_resp.json()
+        register_status = register_result.get("status")
+
+        if register_status not in {"registered", "exists"}:
+            click.echo(f"[ERROR] Unexpected registration response: {register_result}")
+            raise click.Abort()
+
+        # -----------------------------
+        # 4. Confirm overwrite if exists
+        # -----------------------------
+        if register_status == "exists" and not force:
+            click.echo("")
+            click.echo(f"[WARNING] Domain '{normalized_config_domain}' already exists in the backend.")
+            click.echo("This will:")
+            click.echo("  • Update the stored dns_config.yaml")
+            click.echo("  • Push the imported canonical zone")
+            click.echo("")
+            if not click.confirm("Proceed?", default=False):
+                click.echo("Aborted.")
+                return
+
+        # -----------------------------
+        # 5. If exists, sync config
+        # -----------------------------
+        config_status_label = "stored"
+
+        if register_status == "exists":
+            set_config_payload = {
+                "domain": normalized_config_domain,
+                "config_yaml": config_text
+            }
+
+            set_config_resp = api_call(
+                httpx.post,
+                f"{API_URL}/api/dns/set-config",
+                json=set_config_payload,
+                headers=make_headers(ctx)
+            )
+
+            set_config_result = set_config_resp.json()
+            set_config_status = set_config_result.get("status")
+
+            if set_config_status not in {"updated", "stored"}:
+                click.echo(f"[ERROR] Unexpected set-config response: {set_config_result}")
+                raise click.Abort()
+
+            config_status_label = set_config_status
+
+        # -----------------------------
+        # 6. Push zone
+        # -----------------------------
+        push_resp = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/push",
+            json=zone_json,
+            headers=make_headers(ctx)
+        )
+
+        push_result = push_resp.json()
+
+        # -----------------------------
+        # 7. Success output
+        # -----------------------------
+        click.echo(f"[IMPORT] Domain:        {normalized_config_domain}")
+        click.echo(f"[IMPORT] Registration:  {register_status}")
+        click.echo(f"[IMPORT] Config:        {config_status_label}")
+        click.echo(f"[IMPORT] Zone file:     {zone_path}")
+        click.echo(f"[IMPORT] Record count:  {len(records)}")
+        click.echo("[IMPORT] Zone pushed successfully.")
+        click.echo("[IMPORT] Portable domain bundle imported successfully.")
+
+    except click.Abort:
+        raise
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to import domain: {e}")
+        raise click.Abort()
+    
 @cli.command('dnssec-status')
 @json_option()
 @click.option('--domain', '-d', required=True)
 @requires_auth
 def dnssec_status(ctx, as_json, domain):
     "Check DNSSEC status for a domain"
-    r = api_call(httpx.get, f"{API_URL}/api/dnssec/status/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.get, f"{API_URL}/api/dnssec/status/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 
@@ -338,7 +581,8 @@ def dnssec_status(ctx, as_json, domain):
 @requires_auth
 def dnssec_enable(ctx, as_json, domain):
     "Enable DNSSEC for a domain"
-    r = api_call(httpx.post, f"{API_URL}/api/dnssec/enable/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/enable/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 
@@ -348,7 +592,8 @@ def dnssec_enable(ctx, as_json, domain):
 @requires_auth
 def dnssec_disable(ctx, as_json, domain):
     "Disable DNSSEC for a domain"
-    r = api_call(httpx.post, f"{API_URL}/api/dnssec/disable/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/disable/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 
@@ -358,7 +603,8 @@ def dnssec_disable(ctx, as_json, domain):
 @requires_auth
 def dnssec_rotate(ctx, as_json, domain):
     "Rotate DNSSEC keys for a domain"
-    r = api_call(httpx.post, f"{API_URL}/api/dnssec/rotate/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/rotate/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 
@@ -368,7 +614,8 @@ def dnssec_rotate(ctx, as_json, domain):
 @requires_auth
 def dnssec_rotate_zsk(ctx, as_json, domain):
     "Rotate DNSSEC ZSK for a domain"
-    r = api_call(httpx.post, f"{API_URL}/api/dnssec/rotate/zsk/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/rotate/zsk/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 
@@ -378,7 +625,8 @@ def dnssec_rotate_zsk(ctx, as_json, domain):
 @requires_auth
 def dnssec_resign(ctx, as_json, domain):
     "Re-sign the DNS zone for a domain"
-    r = api_call(httpx.post, f"{API_URL}/api/dnssec/resign/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.post, f"{API_URL}/api/dnssec/resign/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 
@@ -402,7 +650,8 @@ def logs_dns(ctx, as_json, domain, limit):
     "View recent DNS change logs"
     url = f"{API_URL}/api/logs/dns?limit={limit}"
     if domain:
-        url += f"&domain={domain}"
+        normalized_domain = domain.strip().lower()
+        url += f"&domain={normalized_domain}"
 
     def extract_value(snapshot):
         if isinstance(snapshot, dict):
@@ -436,7 +685,8 @@ def logs_dnssec(ctx, as_json, domain, limit):
     "View recent DNSSEC-related logs"
     url = f"{API_URL}/api/logs/dnssec?limit={limit}"
     if domain:
-        url += f"&domain={domain}"
+        normalized_domain = domain.strip().lower()
+        url += f"&domain={normalized_domain}"
 
     r = api_call(httpx.get, url, headers=make_headers(ctx))
 
@@ -703,7 +953,8 @@ def signing_rotate(ctx, force, as_json):
 @requires_auth
 def verify_ns(ctx, as_json, domain):
     "Query each agent directly for NS records"
-    r = api_call(httpx.get, f"{API_URL}/api/ns/verify-ns/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.get, f"{API_URL}/api/ns/verify-ns/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 @cli.command('ns-propagation')
@@ -713,7 +964,8 @@ def verify_ns(ctx, as_json, domain):
 def ns_propagation(ctx, as_json, domain):
     """Check if NS records are fully propagated"""
     try:
-        r = api_call(httpx.get, f"{API_URL}/api/ns/ns-propagation-status/{domain}", headers=make_headers(ctx), timeout=35.0)
+        normalized_domain = domain.strip().lower()
+        r = api_call(httpx.get, f"{API_URL}/api/ns/ns-propagation-status/{normalized_domain}", headers=make_headers(ctx), timeout=35.0)
         print_output(r, as_json)
     except httpx.RequestError as e:
         click.echo("[ERROR] Could not complete NS propagation check.")
@@ -730,7 +982,8 @@ def ns_propagation(ctx, as_json, domain):
 @requires_auth
 def get_nameservers(ctx, as_json, domain):
     """List NS records configured in DNSProof config"""
-    r = api_call(httpx.get, f"{API_URL}/api/ns/nameservers/{domain}", headers=make_headers(ctx))
+    normalized_domain = domain.strip().lower()
+    r = api_call(httpx.get, f"{API_URL}/api/ns/nameservers/{normalized_domain}", headers=make_headers(ctx))
     print_output(r, as_json)
 
 @cli.command('ns-status')
@@ -740,7 +993,8 @@ def get_nameservers(ctx, as_json, domain):
 def ns_status(ctx, as_json, domain):
     """Check CoreDNS/NSD status on all agent VMs for a given domain"""
     try:
-        payload = {"domain": domain.strip().lower()}
+        normalized_domain = domain.strip().lower()
+        payload = {"domain": normalized_domain}
         r = api_call(
             httpx.post,
             f"{API_URL}/api/dns/nameserver-status",
@@ -1089,11 +1343,12 @@ def set_config(ctx, file):
 def get_config(ctx, domain, output):
     """Fetch stored dns_config.yaml from backend DB"""
     try:
+        normalized_domain = domain.strip().lower()
         r = api_call(
             httpx.get,
             f"{API_URL}/api/dns/get-config",
             headers=make_headers(ctx),
-            params={"domain": domain}
+            params={"domain": normalized_domain}
         )
         result = r.json()
         yaml_text = result["config_yaml"]
@@ -1101,9 +1356,9 @@ def get_config(ctx, domain, output):
         if output:
             with open(output, "w") as f:
                 f.write(yaml_text)
-            click.echo(f"[GET-CONFIG] Config for {domain} saved to {output}")
+            click.echo(f"[GET-CONFIG] Config for {normalized_domain} saved to {output}")
         else:
-            click.echo(f"# Stored config for {domain} (last updated {result['updated_at']}):\n")
+            click.echo(f"# Stored config for {normalized_domain} (last updated {result['updated_at']}):\n")
             click.echo(yaml_text)
 
     except Exception as e:
@@ -1128,10 +1383,14 @@ def get_domains(ctx, as_json):
                 click.echo(f"[ERROR] {entry['domain']}: {entry['error']}")
                 continue
 
-            click.echo(f"Domain:      {entry['domain']}")
-            click.echo(f"Primary NS:  {entry.get('primary_ns', '-')}")
-            click.echo(f"NS Names:    {', '.join(entry.get('nameservers', []))}")
-            click.echo(f"NS IPs:      {', '.join(entry.get('ips', []))}")
+            click.echo(f"Domain:         {entry['domain']}")
+            click.echo(f"Primary NS:     {entry.get('primary_ns', '-')}")
+            click.echo(f"NS Names:       {', '.join(entry.get('nameservers', []))}")
+            click.echo(f"NS IPs:         {', '.join(entry.get('ips', []))}")
+            click.echo(f"Updated At:     {entry.get('updated_at', '-')}")
+            click.echo(f"DNSSEC:         {entry.get('dnssec_status', 'disabled')}")
+            click.echo(f"DNSSEC Action:  {entry.get('dnssec_action') or '-'}")
+            click.echo(f"DNSSEC Updated: {entry.get('dnssec_updated_at') or '-'}")
             click.echo("-" * 40)
 
     except Exception as e:
@@ -1145,8 +1404,9 @@ def deregister(ctx, domain):
     Deregister a domain from the app backend and delete zone files from nameservers.
     """
     try:
+        normalized_domain = domain.strip().lower()
         confirm = click.confirm(
-            f"[WARNING] This will remove '{domain}' from the backend and delete its zone from all nameservers.\nAre you sure?",
+            f"[WARNING] This will remove '{normalized_domain}' from the backend and delete its zone from all nameservers.\nAre you sure?",
             default=False
         )
         if not confirm:
@@ -1156,16 +1416,16 @@ def deregister(ctx, domain):
         r = api_call(
             httpx.post,
             f"{API_URL}/api/dns/deregister-domain",
-            json={"domain": domain},
+            json={"domain": normalized_domain},
             headers=make_headers(ctx)
         )
         result = r.json()
         status = result.get("status")
 
         if status == "deregistered":
-            click.echo(f"[SUCCESS] Domain '{domain}' has been deregistered and zone files deleted.")
+            click.echo(f"[SUCCESS] Domain '{normalized_domain}' has been deregistered and zone files deleted.")
         elif status == "not-found":
-            click.echo(f"[INFO] Domain '{domain}' was not registered.")
+            click.echo(f"[INFO] Domain '{normalized_domain}' was not registered.")
         else:
             click.echo(f"[WARNING] Unexpected response: {result}")
     except Exception as e:
