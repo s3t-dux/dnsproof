@@ -274,6 +274,49 @@ This command shows:
 
 Use this to audit your managed domains and confirm config consistency across the system.
 
+### Domain-status
+Inspect the current operational state of a single domain.
+
+```bash
+dnp domain-status --domain dnsproof.org
+```
+This command consolidates domain-level status across multiple layers:
+- stored config freshness
+- canonical zone record count
+- nameserver health
+- NS propagation
+- DNSSEC posture
+- most recent DNS and DNSSEC activity
+
+Use this when you want a deeper view than get-domains provides.  
+
+It is especially useful for:
+- confirming that a domain is fully deployed and healthy
+- checking whether delegation has propagated
+- verifying whether DNSSEC is signed and published
+- reviewing the latest operational activity for a domain
+
+Output includes:  
+- Domain name
+- Primary nameserver
+- Configured NS names and IPs
+- Last config update time
+- Current record count
+- Nameserver health across agent VMs
+- Delegation / propagation status
+- DNSSEC status and signature health
+- Most recent DNS change
+- Most recent DNSSEC event
+
+Use `--json` or `-j` for structured output:
+```bash
+dnp domain-status --domain dnsproof.org --json
+```
+
+Conceptually:
+- `get-domains` → fleet-level overview
+- `domain-status` → single-domain deep view
+
 ## Zone File Operations  
 
 These commands let you work directly with full zone files in JSON format — either pushing them to nameservers or fetching the current version from the backend.  

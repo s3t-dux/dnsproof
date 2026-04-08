@@ -1396,6 +1396,95 @@ def get_domains(ctx, as_json):
     except Exception as e:
         click.echo(f"[ERROR] Failed to fetch domain list: {e}")
 
+@cli.command("domain-status")
+@json_option()
+@click.option('--domain', '-d', required=True, help="Domain to inspect")
+@requires_auth
+def domain_status(ctx, as_json, domain):
+    """Show consolidated operational status for a domain"""
+    try:
+        normalized_domain = domain.strip().lower()
+        r = api_call(
+            httpx.get,
+            f"{API_URL}/api/dns/domain-status",
+            headers=make_headers(ctx),
+            params={"domain": normalized_domain},
+            timeout=40.0
+        )
+        data = r.json()
+
+        if as_json:
+            click.echo(json.dumps(data, indent=2, default=str))
+            return
+
+        click.echo(f"Domain:            {data['domain']}")
+        click.echo(f"Primary NS:        {data['config'].get('primary_ns', '-')}")
+        click.echo(f"NS Names:          {', '.join(data['config'].get('nameservers', []))}")
+        click.echo(f"NS IPs:            {', '.join(data['config'].get('ips', []))}")
+        click.echo(f"Config Updated:    {data['summary'].get('config_updated_at')}")
+        click.echo(f"Record Count:      {data['summary'].get('record_count')}")
+        click.echo(f"TLS Enabled:       {data['config'].get('tls_enabled')}")
+        click.echo("")
+
+        ns = data.get("nameserver_status", {})
+        click.echo("Nameserver Health")
+        click.echo("-----------------")
+        click.echo(f"Overall:           {'Healthy' if ns.get('is_active') else 'Issue Detected'}")
+        click.echo(f"Details:           {ns.get('status_details', '-')}")
+        for entry in ns.get("results", []):
+            click.echo(f"  - {entry.get('ip')}: {entry.get('status')}")
+
+        prop = data.get("propagation", {})
+        click.echo("")
+        click.echo("NS Propagation")
+        click.echo("--------------")
+        click.echo(f"Status:            {prop.get('status', '-')}")
+        click.echo(f"Match:             {prop.get('match')}")
+        click.echo(f"Depth:             {prop.get('depth')}")
+        click.echo(f"Explanation:       {prop.get('explanation', '-')}")
+        if prop.get("resolved_ns"):
+            click.echo(f"Resolved NS:       {', '.join(prop['resolved_ns'])}")
+
+        dnssec = data.get("dnssec", {})
+        click.echo("")
+        click.echo("DNSSEC")
+        click.echo("------")
+        click.echo(f"Status:            {dnssec.get('status', '-')}")
+        click.echo(f"Message:           {dnssec.get('message', '-')}")
+        click.echo(f"Auto Resign:       {dnssec.get('auto_resign_enabled')}")
+        click.echo(f"RRSIG Expiry:      {dnssec.get('days_before_rrsig_expiration')}")
+        click.echo(f"Key Age (days):    {dnssec.get('days_since_last_key_creation')}")
+        if dnssec.get("note"):
+            click.echo(f"Note:              {dnssec.get('note')}")
+
+        recent = data.get("recent_activity", {})
+        last_dns = recent.get("last_dns_log")
+        last_dnssec = recent.get("last_dnssec_log")
+
+        click.echo("")
+        click.echo("Recent Activity")
+        click.echo("---------------")
+        if last_dns:
+            click.echo(
+                f"Last DNS Change:   {last_dns.get('created_at')} | "
+                f"{last_dns.get('action')} {last_dns.get('record_type')} "
+                f"{last_dns.get('record_name')} -> {last_dns.get('record_value')}"
+            )
+        else:
+            click.echo("Last DNS Change:   -")
+
+        if last_dnssec:
+            click.echo(
+                f"Last DNSSEC Event: {last_dnssec.get('created_at')} | "
+                f"{last_dnssec.get('action')} key_tag={last_dnssec.get('key_tag', '-')}"
+            )
+        else:
+            click.echo("Last DNSSEC Event: -")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to fetch domain status: {e}")
+        raise click.Abort()
+    
 @cli.command("deregister")
 @click.option('--domain', '-d', required=True, help="Domain to deregister")
 @requires_auth
