@@ -1520,6 +1520,50 @@ def deregister(ctx, domain):
     except Exception as e:
         click.echo(f"[ERROR] Failed to deregister: {e}")
 
+@cli.command("policy-status")
+@json_option()
+@click.option('--domain', '-d', required=True, help="Domain to evaluate against canonical vs live DNS")
+@requires_auth
+def policy_status(ctx, as_json, domain):
+    """Show deterministic DNS/email policy evaluation for a domain"""
+    try:
+        normalized_domain = domain.strip().lower()
+        r = api_call(
+            httpx.get,
+            f"{API_URL}/api/ai-explain/policy-eval/{normalized_domain}",
+            headers=make_headers(ctx),
+            timeout=40.0
+        )
+        data = r.json()
+
+        if as_json:
+            click.echo(json.dumps(data, indent=2))
+            return
+
+        click.echo(f"Domain:            {data['domain']}")
+        click.echo(f"Policy Status:     {data['status']}")
+        click.echo(f"Canonical Hash:    {data.get('canonical_state_hash', '-')}")
+        click.echo(f"Live Hash:         {data.get('live_state_hash', '-')}")
+        click.echo("")
+
+        issues = data.get("classified_delta", [])
+        if not issues:
+            click.echo("Issues")
+            click.echo("------")
+            click.echo("No policy issues detected.")
+        else:
+            click.echo("Issues")
+            click.echo("------")
+            for issue in issues:
+                click.echo(
+                    f"- [{issue.get('severity', '?').upper()}] "
+                    f"{issue.get('code', '-')}: {issue.get('message', '-')}"
+                )
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to fetch policy status: {e}")
+        raise click.Abort()
+
 @cli.command('devserver')
 def devserver():
     """Run the app backend with hot reload (for local development)."""

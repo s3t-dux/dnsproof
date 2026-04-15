@@ -1,6 +1,6 @@
 # DNSProof CLI (`dnp`)
 
-The `dnp` CLI is the command-line interface for interacting with your DNSProof deployment. It allows you to manage DNS records, push signed zone changes, enable DNSSEC, and inspect logs — all from the terminal.
+The `dnp` CLI is the command-line interface for interacting with your DNSProof deployment. It allows you to manage DNS records, push signed zone changes, enable DNSSEC, inspect logs, evaluate policy posture, and explain issues in plain language — all from the terminal.
 
 This tool is ideal for headless environments, GitOps workflows, or privacy-conscious operators who want full control over their nameserver stack.
 
@@ -41,7 +41,18 @@ dnp add --domain dnsproof.org --type TXT --name @ --value "hello world"
 dnp logs-dns --domain dnsproof.org -j
 dnp dnssec-enable --domain dnsproof.org -j
 ```
+
+### 5. Inspect policy posture
+```bash
+dnp policy-status --domain dnsproof.org
+```
+
+### 6. Explain issues in plain language
+```bash
+dnp explain-policy --domain dnsproof.org
+```
 Use `--json` (or `-j`) to print raw output with spacing.
+
 
 ## Conceptual Model
 DNSProof separates domain management into three distinct layers:
@@ -316,6 +327,36 @@ dnp domain-status --domain dnsproof.org --json
 Conceptually:
 - `get-domains` → fleet-level overview
 - `domain-status` → single-domain deep view
+
+### Policy-status
+
+Inspect the current DNS/email policy posture of a single domain by comparing:
+- canonical DNS state stored in DNSProof
+- live DNS state observed from public resolvers
+```bash
+dnp policy-status --domain dnsproof.org
+```
+
+This command performs deterministic policy evaluation and highlights meaningful issues such as:
+- missing DMARC
+- weak DMARC policy (`p=none`)
+- SPF absence or mismatch
+- MX mismatch
+
+Use this when you want policy-level legibility rather than raw record inspection.
+Output includes:
+- domain name
+- overall policy status (`secure`, `warning`, `invalid`)
+- canonical vs live state hashes
+- structured issue list (`classified_delta`)
+
+Use `--json` or `-j` for structured output:
+```bash
+dnp policy-status --domain dnsproof.org --json
+```
+Conceptually:
+- `domain-status` → operational state
+- `policy-status` → policy interpretation of canonical vs live DNS
 
 ## Zone File Operations  
 
