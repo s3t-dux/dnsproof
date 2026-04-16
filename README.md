@@ -38,12 +38,17 @@ DNSProof solves this by providing:
 
 ## Project Status
 
-DNSProof is actively evolving from StackDNS's live infrastructure. The current public release includes:
+DNSProof is actively evolving from StackDNS’s live infrastructure.
 
-- Provisioning scripts for CoreDNS or NSD-based VMs  
-- A signing and logging backend built in FastAPI (private for now)  
-- A fully working CLI (`dnp.py`) for DNS record control, DNSSEC, logs, and zone management  
-- Sample configuration files, demo logs, and developer documentation
+The current public repository includes:
+
+- A working CLI (`cli/dnp.py`) for backend-connected DNSProof workflows
+- Standalone offline log verification tools
+- Sample configs, demo logs, and developer documentation
+- Reproducibility materials for public verification and development
+
+The production backend and nameserver provisioning layer are not yet public.
+They are being extracted for a later open release.
 
 ## ▶ DNSProof CLI Demo (90s)
 
