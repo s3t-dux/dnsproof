@@ -1523,15 +1523,23 @@ def deregister(ctx, domain):
 @cli.command("policy-status")
 @json_option()
 @click.option('--domain', '-d', required=True, help="Domain to evaluate against canonical vs live DNS")
+@click.option('--dkim-selector', default=None, help="Optional DKIM selector to evaluate (e.g. selector1)")
 @requires_auth
-def policy_status(ctx, as_json, domain):
+def policy_status(ctx, as_json, domain, dkim_selector):
     """Show deterministic DNS/email policy evaluation for a domain"""
     try:
         normalized_domain = domain.strip().lower()
+        normalized_selector = dkim_selector.strip().lower() if dkim_selector else None
+
+        params = {}
+        if normalized_selector:
+            params["dkim_selector"] = normalized_selector
+
         r = api_call(
             httpx.get,
             f"{API_URL}/api/ai-explain/policy-eval/{normalized_domain}",
             headers=make_headers(ctx),
+            params=params,
             timeout=40.0
         )
         data = r.json()
@@ -1542,6 +1550,7 @@ def policy_status(ctx, as_json, domain):
 
         click.echo(f"Domain:            {data['domain']}")
         click.echo(f"Policy Status:     {data['status']}")
+        click.echo(f"DKIM Selector:     {data.get('dkim_selector') or '-'}")
         click.echo(f"Canonical Hash:    {data.get('canonical_state_hash', '-')}")
         click.echo(f"Live Hash:         {data.get('live_state_hash', '-')}")
         click.echo("")
@@ -1563,7 +1572,81 @@ def policy_status(ctx, as_json, domain):
     except Exception as e:
         click.echo(f"[ERROR] Failed to fetch policy status: {e}")
         raise click.Abort()
+    
+@cli.command("explain-policy")
+@json_option()
+@click.option('--domain', '-d', required=True, help="Domain to explain")
+@click.option('--audience', default="sme_owner", show_default=True, type=click.Choice(["sme_owner", "technical_operator"]))
+@click.option('--tone', default="plain", show_default=True, type=click.Choice(["plain", "concise", "advisory"]))
+@click.option('--dkim-selector', default=None, help="Optional DKIM selector to evaluate (e.g. selector1)")
+@click.option('--use-mock', is_flag=True, default=False, help="Use mock AI response instead of real API call")
+@requires_auth
+def explain_policy(ctx, as_json, domain, audience, tone, dkim_selector, use_mock):
+    """Explain deterministic policy findings in plain language"""
+    try:
+        normalized_domain = domain.strip().lower()
+        normalized_selector = dkim_selector.strip().lower() if dkim_selector else None
 
+        # Step 1: get deterministic policy result
+        params = {}
+        if normalized_selector:
+            params["dkim_selector"] = normalized_selector
+
+        r = api_call(
+            httpx.get,
+            f"{API_URL}/api/ai-explain/policy-eval/{normalized_domain}",
+            headers=make_headers(ctx),
+            params=params,
+            timeout=40.0
+        )
+        policy_data = r.json()
+
+        # Step 2: enrich for explanation route
+        payload = dict(policy_data)
+        payload["audience"] = audience
+        payload["tone"] = tone
+        payload["use_mock"] = use_mock
+
+        # Step 3: ask AI explainer
+        explain_resp = api_call(
+            httpx.post,
+            f"{API_URL}/api/ai-explain/from-policy-eval",
+            headers=make_headers(ctx),
+            json=payload,
+            timeout=60.0
+        )
+        data = explain_resp.json()
+
+        if as_json:
+            click.echo(json.dumps(data, indent=2))
+            return
+
+        click.echo(f"Domain:            {data['domain']}")
+        click.echo(f"Status:            {data['status']}")
+        click.echo(f"DKIM Selector:     {policy_data.get('dkim_selector') or '-'}")
+        click.echo(f"Provider:          {data.get('provider', '-')}")
+        click.echo(f"Model:             {data.get('model', '-')}")
+        click.echo("")
+        click.echo("Summary")
+        click.echo("-------")
+        click.echo(data.get("summary", ""))
+        click.echo("")
+        click.echo("Explanation")
+        click.echo("-----------")
+        click.echo(data.get("explanation", ""))
+
+        actions = data.get("recommended_actions", [])
+        if actions:
+            click.echo("")
+            click.echo("Recommended Actions")
+            click.echo("-------------------")
+            for action in actions:
+                click.echo(f"- {action}")
+
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to explain policy: {e}")
+        raise click.Abort()
+    
 @cli.command('devserver')
 def devserver():
     """Run the app backend with hot reload (for local development)."""

@@ -358,6 +358,43 @@ Conceptually:
 - `domain-status` → operational state
 - `policy-status` → policy interpretation of canonical vs live DNS
 
+### Explain-policy
+
+Explain deterministic policy findings in plain language.
+```bash
+dnp explain-policy --domain dnsproof.org
+```
+
+This command:
+- runs deterministic policy evaluation
+- sends the classified result to the AI explanation layer
+- returns a concise explanation of:
+  - what the issue means
+  - what practical risk it creates
+  - what to fix next
+
+Optional controls:
+```bash
+dnp explain-policy --domain dnsproof.org --audience sme_owner --tone plain
+```
+Supported options:
+- `--audience` → `business_owner` or `technical_operator`
+- `--tone` → `plain`, `concise`, or `advisory`
+- `--use-mock` → use mock explanation output instead of a live AI call
+
+Use `--json` or `-j` for structured output:
+```bash
+dnp explain-policy --domain dnsproof.org --json
+```
+Design note:
+- deterministic logic remains the source of truth
+- AI does not decide correctness
+- AI explains already-classified policy results
+
+Conceptually:
+- `policy-status` → deterministic policy evaluation
+- `explain-policy` → human-readable explanation layer
+
 ## Zone File Operations  
 
 These commands let you work directly with full zone files in JSON format — either pushing them to nameservers or fetching the current version from the backend.  
