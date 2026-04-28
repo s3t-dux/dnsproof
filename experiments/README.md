@@ -13,11 +13,9 @@ Code under `experiments/`:
 These modules evaluate potential future extensions to DNSProof's
 cryptographic integrity architecture.
 
-------------------------------------------------------------------------
+## Merkle-Based DNS Change Log Anchoring (Experimental)
 
-# Merkle-Based DNS Change Log Anchoring (Experimental)
-
-## Objective
+### Objective
 
 DNSProof currently guarantees:
 
@@ -40,9 +38,8 @@ The purpose is to explore whether DNS mutation history can be:
 This design follows principles used in append-only transparency logs and
 Merkle-based audit systems.
 
-------------------------------------------------------------------------
 
-# Deterministic Ordering
+## Deterministic Ordering
 
 Merkle leaves are derived from `DNSChangeLog.snapshot_hash`.
 
@@ -56,18 +53,16 @@ instances.
 Changing the ordering rule invalidates compatibility with previously
 computed roots.
 
-------------------------------------------------------------------------
+## Merkle Specification (v1.1)
 
-# Merkle Specification (v1.1)
-
-## Hash Function
+### Hash Function
 
 -   SHA256
 -   Hex-encoded (lowercase)
 -   UTF-8 input encoding
 -   No newline or prefix characters
 
-## Domain Separation
+### Domain Separation
 
 To prevent structural ambiguity between leaf and internal node hashes:
 
@@ -78,7 +73,7 @@ To prevent structural ambiguity between leaf and internal node hashes:
 Domain prefixes ("leaf:", "node:") ensure leaf and node namespaces are
 disjoint.
 
-## Tree Construction Rules
+### Tree Construction Rules
 
 -   Level 0 consists of leaf hashes.
 -   Each parent node is computed from adjacent pairs.
@@ -88,11 +83,10 @@ disjoint.
 
 Tree construction is O(n) and currently performed in memory.
 
-------------------------------------------------------------------------
 
-# Included Modules
+## Included Modules
 
-## `merkle_log.py`
+### `merkle_log.py`
 
 Functions:
 
@@ -106,9 +100,8 @@ Operates exclusively on the local SQLite database.
 
 No production APIs are modified.
 
-------------------------------------------------------------------------
 
-## `verify_merkle_dns.py`
+### `verify_merkle_dns.py`
 
 Extends local Merkle root computation with DNS publication comparison.
 
@@ -124,9 +117,8 @@ Features:
 This enables external publication validation without modifying the
 DNSProof signing model.
 
-------------------------------------------------------------------------
 
-# Trust Model Boundaries
+## Trust Model Boundaries
 
 This module does **not**:
 
@@ -140,9 +132,8 @@ Current root publication relies on DNS integrity (DNSSEC recommended).
 The Ed25519-signed snapshot hashes remain the primary cryptographic
 trust anchor.
 
-------------------------------------------------------------------------
 
-# Research Motivation
+## Research Motivation
 
 This experiment evaluates whether DNSProof can evolve from:
 
@@ -162,9 +153,8 @@ Potential future directions include:
 
 No integration roadmap is currently committed.
 
-------------------------------------------------------------------------
 
-# Stability Notice
+## Stability Notice
 
 This is experimental code.
 
