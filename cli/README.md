@@ -207,6 +207,24 @@ This command:
 `--agent-secret` is required. It authenticates API calls between your backend and the VM.
 The secret can be a raw string or a path to a `.secret` file.
 
+### Generate App Master Key
+
+Generate a base64-url-safe 32-byte `APP_MASTER_KEY` for encrypting stored agent credentials.
+This key is used by the app to encrypt and decrypt agent secrets used for nameserver authentication.
+
+```bash
+dnp generate-app-key
+```
+Example output:
+```bash
+APP_MASTER_KEY=your_generated_key_here
+```
+Add the output to your `.env` file:
+```bash
+dnp generate-app-key >> .env
+```
+Keep this key stable. If APP_MASTER_KEY changes, existing encrypted agent secrets cannot be decrypted.
+
 ### Set CLI Environment Variables
 
 The `dnp` CLI requires an API URL and password for authentication.
@@ -248,6 +266,47 @@ This command:
 (use `--output` to specify a custom path)  
 
 This step is required before any DNS records or configuration updates can be applied.
+
+### Set-agent-secret
+
+Update the app-side encrypted agent secret for a specific nameserver.
+
+```bash
+dnp set-agent-secret --domain dnsproof.org --nameserver ns1
+```
+
+This command updates the secret stored in the backend database for app → nameserver agent authentication.
+
+It does **not** change the secret on the nameserver VM itself.
+Use it after manually updating `AGENT_SECRET` on the nameserver and restarting the DNSProof agent.
+
+Typical workflow:
+```bash
+# 1. SSH into the nameserver VM
+ssh user@<ns1-ip>
+
+# 2. Update AGENT_SECRET in the agent environment/systemd config
+# 3. Restart the dnsagent service
+
+# 4. Update the app-side encrypted copy
+dnp set-agent-secret --domain dnsproof.org --nameserver ns1
+
+# 5. Verify app → agent authentication
+dnp ns-status --domain dnsproof.org
+```
+Optional:
+```bash
+dnp set-agent-secret \
+  --domain dnsproof.org \
+  --nameserver ns1 \
+  --agent-ip 1.2.3.4
+```
+Use `--agent-ip` when you want the backend to validate or update the stored IP for that nameserver.
+
+Use `--force` to skip the confirmation prompt:
+```bash
+dnp set-agent-secret --domain dnsproof.org --nameserver ns1 --force
+```
 
 ### Set-config
 Update the stored configuration for an already registered domain.

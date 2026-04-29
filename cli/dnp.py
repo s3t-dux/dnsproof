@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import yaml
 import getpass
+import base64
 from pathlib import Path
 from functools import wraps
 
@@ -81,6 +82,147 @@ def requires_auth(fn):
             ctx.api_password = getpass.getpass("Enter DNSProof password: ")
         return fn(ctx, *args, **kwargs)
     return wrapper
+
+def load_yaml_file(path: str) -> dict:
+    with open(path, "r") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise click.ClickException("Config file must contain a YAML object.")
+    return data
+
+
+def normalize_domain(value: str) -> str:
+    value = (value or "").strip().lower()
+    if not value:
+        raise click.ClickException("Missing domain in config.")
+    return value
+
+
+def collect_nameserver_targets(cfg: dict) -> list[dict]:
+    domain = normalize_domain(cfg.get("domain"))
+    nameservers = cfg.get("nameservers", {})
+
+    if not isinstance(nameservers, dict) or not nameservers:
+        raise click.ClickException("Config must contain a non-empty 'nameservers' mapping.")
+
+    targets = []
+    for ns_name, ns_data in nameservers.items():
+        short_name = str(ns_name).strip().lower()
+        if not short_name:
+            raise click.ClickException("Found blank nameserver name in config.")
+
+        if not isinstance(ns_data, dict):
+            raise click.ClickException(f"Nameserver '{short_name}' must map to an object.")
+
+        ip = ns_data.get("ip")
+        if not ip or not isinstance(ip, str):
+            raise click.ClickException(f"Nameserver '{short_name}' is missing a valid 'ip'.")
+
+        targets.append({
+            "domain": domain,
+            "nameserver": short_name,
+            "agent_ip": ip.strip(),
+        })
+
+    return targets
+
+
+def resolve_agent_secrets_interactively(targets: list[dict]) -> list[dict]:
+    if not targets:
+        return []
+
+    click.echo("")
+    click.echo("[AGENT SECRETS]")
+    click.echo("These secrets will be stored encrypted in the app database.")
+    click.echo("They are used for app -> nameserver agent authentication.")
+    click.echo("")
+
+    use_same = click.confirm(
+        "Use the same agent secret for all nameservers?",
+        default=True
+    )
+
+    resolved = []
+
+    if use_same:
+        secret = getpass.getpass("Enter agent secret for all nameservers: ").strip()
+        if not secret:
+            raise click.ClickException("Agent secret cannot be empty.")
+
+        confirm = getpass.getpass("Confirm agent secret: ").strip()
+        if secret != confirm:
+            raise click.ClickException("Agent secret confirmation did not match.")
+
+        for t in targets:
+            resolved.append({**t, "shared_secret": secret})
+        return resolved
+
+    for t in targets:
+        label = f"{t['nameserver']} ({t['agent_ip']})"
+        secret = getpass.getpass(f"Enter agent secret for {label}: ").strip()
+        if not secret:
+            raise click.ClickException(f"Agent secret cannot be empty for {label}.")
+
+        confirm = getpass.getpass(f"Confirm agent secret for {label}: ").strip()
+        if secret != confirm:
+            raise click.ClickException(f"Agent secret confirmation did not match for {label}.")
+
+        resolved.append({**t, "shared_secret": secret})
+
+    return resolved
+
+
+def resolve_agent_secrets_from_env(targets: list[dict]) -> list[dict] | None:
+    """
+    Supported env patterns:
+      DNSPROOF_AGENT_SECRET
+      DNSPROOF_AGENT_SECRET_NS1
+      DNSPROOF_AGENT_SECRET_NS2
+      ...
+    """
+    if not targets:
+        return []
+
+    shared = os.getenv("DNSPROOF_AGENT_SECRET", "").strip()
+    if shared:
+        return [{**t, "shared_secret": shared} for t in targets]
+
+    resolved = []
+    for t in targets:
+        env_name = f"DNSPROOF_AGENT_SECRET_{t['nameserver'].upper()}"
+        secret = os.getenv(env_name, "").strip()
+        if not secret:
+            return None
+        resolved.append({**t, "shared_secret": secret})
+
+    return resolved
+
+
+def set_agent_secrets(ctx, targets_with_secrets: list[dict]) -> None:
+    if not targets_with_secrets:
+        return
+
+    for item in targets_with_secrets:
+        payload = {
+            "domain": item["domain"],
+            "nameserver": item["nameserver"],
+            "agent_ip": item["agent_ip"],
+            "shared_secret": item["shared_secret"],
+        }
+
+        r = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/set-agent-secret",
+            json=payload,
+            headers=make_headers(ctx),
+        )
+        data = r.json()
+
+        click.echo(
+            f"[AGENT SECRET] {data.get('domain')} "
+            f"{data.get('nameserver')} "
+            f"({data.get('agent_ip')}) -> {data.get('status', 'updated')}"
+        )
 
 @click.group()
 @click.option('--api-url', default=None, help="Override DNSProof API URL (default: http://localhost:8000)")
@@ -1162,6 +1304,17 @@ def generate_config(domain, primary_ns, ns, output, resolver, tls_enabled, agent
     except Exception as e:
         click.echo(f"[ERROR] Failed to generate config: {e}")
 
+@cli.command("generate-app-key")
+def generate_app_key():
+    """
+    Generate a base64-url-safe 32-byte APP_MASTER_KEY for DNSProof secret encryption.
+    """
+    key = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    click.echo(f"APP_MASTER_KEY={key}")
+    click.echo()
+    click.echo("Add this line to your .env file and keep it stable.")
+    click.echo("If this key changes, existing encrypted agent secrets cannot be decrypted.")
+
 @cli.command('generate-agent-secret')
 @click.option('--output', '-o', default="agent.secret", type=click.Path(), help="File to save the generated secret")
 @click.option('--show', is_flag=True, help="Also print the secret to stdout")
@@ -1190,6 +1343,252 @@ def generate_agent_secret(output, show, copy):
         except ImportError:
             click.secho("[WARNING] pyperclip not installed. Skipping clipboard copy.", fg="red")
 
+@cli.command("set-agent-secret")
+@json_option()
+@click.option("--domain", "-d", required=True, help="Domain whose nameserver agent secret should be updated")
+@click.option("--nameserver", "-n", required=True, help="Nameserver short name, e.g. ns1 or ns2")
+@click.option("--agent-ip", default=None, help="Optional agent IP. If omitted, backend uses stored dns_config.yaml")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
+@requires_auth
+def set_agent_secret(ctx, as_json, domain, nameserver, agent_ip, force):
+    """
+    Update the app-side encrypted agent secret for one nameserver.
+
+    This does not modify the nameserver VM itself.
+    First update AGENT_SECRET on the nameserver VM, restart dnsagent,
+    then run this command so the app can authenticate to that agent.
+    """
+    try:
+        normalized_domain = domain.strip().lower()
+        normalized_nameserver = nameserver.strip().lower().rstrip(".")
+        normalized_agent_ip = agent_ip.strip() if agent_ip else None
+
+        if not normalized_domain:
+            raise click.ClickException("Domain cannot be empty.")
+
+        if not normalized_nameserver:
+            raise click.ClickException("Nameserver cannot be empty.")
+
+        if not force:
+            click.echo("")
+            click.echo("[WARNING] This updates the app-side stored agent secret only.")
+            click.echo("It does NOT change AGENT_SECRET on the nameserver VM.")
+            click.echo("")
+            click.echo("Expected workflow:")
+            click.echo(f"  1. SSH into {normalized_nameserver}")
+            click.echo("  2. Update AGENT_SECRET on the nameserver VM")
+            click.echo("  3. Restart dnsagent")
+            click.echo("  4. Run this command to update the app-side encrypted secret")
+            click.echo("")
+            if not click.confirm(
+                f"Update app-side agent secret for {normalized_nameserver}.{normalized_domain}?",
+                default=False,
+            ):
+                click.echo("Aborted.")
+                return
+
+        secret = getpass.getpass(
+            f"Enter new agent secret for {normalized_nameserver}.{normalized_domain}: "
+        ).strip()
+
+        if not secret:
+            raise click.ClickException("Agent secret cannot be empty.")
+
+        confirm = getpass.getpass("Confirm new agent secret: ").strip()
+
+        if secret != confirm:
+            raise click.ClickException("Agent secret confirmation did not match.")
+
+        payload = {
+            "domain": normalized_domain,
+            "nameserver": normalized_nameserver,
+            "shared_secret": secret,
+        }
+
+        if normalized_agent_ip:
+            payload["agent_ip"] = normalized_agent_ip
+
+        r = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/set-agent-secret",
+            json=payload,
+            headers=make_headers(ctx),
+        )
+
+        data = r.json()
+
+        if as_json:
+            click.echo(json.dumps(data, indent=2, default=str))
+            return
+
+        click.echo("")
+        click.echo("[AGENT SECRET] App-side encrypted secret updated.")
+        click.echo(f"Domain:      {data.get('domain')}")
+        click.echo(f"Nameserver:  {data.get('nameserver')}")
+        click.echo(f"Agent IP:    {data.get('agent_ip') or '-'}")
+        click.echo(f"Status:      {data.get('status', 'updated')}")
+        click.echo(f"Updated At:  {data.get('updated_at', '-')}")
+        click.echo("")
+        click.echo("Next check:")
+        click.echo(f"  dnp ns-status -d {normalized_domain}")
+
+    except click.ClickException:
+        raise
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to update agent secret: {e}")
+        raise click.Abort()
+    
+@cli.command('init')
+@click.option(
+    '--config', '-c',
+    type=click.Path(exists=True),
+    default='dns_config.yaml',
+    help="Path to dns_config.yaml"
+)
+@click.option(
+    '--output', '-o',
+    type=click.Path(),
+    default=None,
+    help="Path to save the generated zone JSON file"
+)
+@click.option(
+    '--skip-agent-secret',
+    is_flag=True,
+    help="Skip setting per-nameserver agent secrets during init"
+)
+@requires_auth
+def init(ctx, config, output, skip_agent_secret):
+    """
+    Initialize a vanilla JSON zone file with SOA, NS, and A records.
+    Register the domain with the app backend, store config,
+    and optionally set encrypted per-nameserver agent secrets.
+    """
+    import json
+    from pathlib import Path
+    from datetime import datetime
+
+    try:
+        cfg = load_yaml_file(config)
+
+        domain = normalize_domain(cfg["domain"])
+        primary_ns = str(cfg["primary_ns"]).strip().lower()
+        nameservers = cfg["nameservers"]
+
+        # Build SOA string
+        soa_mname = f"{primary_ns}.{domain}."
+        soa_rname = f"admin.{domain}."
+        serial = datetime.utcnow().strftime("%Y%m%d01")
+        soa_value = f"{soa_mname} {soa_rname} {serial} 7200 1800 1209600 3600"
+
+        records = [
+            {
+                "type": "SOA",
+                "name": "@",
+                "value": soa_value
+            }
+        ]
+
+        # Add NS and A records for all nameservers
+        for ns_name, ns_data in nameservers.items():
+            fqdn = f"{ns_name}.{domain}."
+            ip = ns_data["ip"]
+
+            records.append({
+                "type": "NS",
+                "name": "@",
+                "value": fqdn
+            })
+            records.append({
+                "type": "A",
+                "name": ns_name,
+                "value": ip
+            })
+
+        # Optional TXT record
+        records.append({
+            "type": "TXT",
+            "name": "@",
+            "value": "dnsproof init",
+            "ttl": 3600
+        })
+
+        zone_json = {
+            "domain": domain,
+            "records": records
+        }
+
+        # Determine output path
+        out_path = Path(output) if output else Path(f"{domain}.json")
+
+        if out_path.exists():
+            click.echo(f"[WARNING] Zone JSON already exists at {out_path}")
+            if not click.confirm("Overwrite it?"):
+                click.echo("Aborted.")
+                return
+
+        # 1) Save local JSON zone file
+        with open(out_path, "w") as f:
+            json.dump(zone_json, f, indent=2)
+        click.echo(f"[INIT] Zone file initialized at: {out_path}")
+
+        # 2) Register domain and store config_yaml
+        config_yaml_text = Path(config).read_text()
+
+        r = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/register-domain",
+            json={
+                "domain": domain,
+                "config_yaml": config_yaml_text,
+            },
+            headers=make_headers(ctx),
+        )
+        result = r.json()
+
+        if result.get("status") == "registered":
+            click.echo(f"[REGISTER] Domain registered with backend: {domain}")
+        else:
+            click.echo(f"[REGISTER] Response: {result}")
+
+        # 3) Make sure config is stored / updated explicitly
+        r = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/set-config",
+            json={
+                "domain": domain,
+                "config_yaml": config_yaml_text,
+            },
+            headers=make_headers(ctx),
+        )
+        click.echo(f"[CONFIG] Stored config for {domain}")
+
+        # 4) Set per-nameserver agent secrets
+        targets = collect_nameserver_targets(cfg)
+
+        if skip_agent_secret:
+            click.echo("[AGENT SECRET] Skipped during init.")
+            return
+
+        env_targets = resolve_agent_secrets_from_env(targets)
+        if env_targets is not None:
+            click.echo("[AGENT SECRET] Using environment-provided secret(s).")
+            set_agent_secrets(ctx, env_targets)
+            return
+
+        if click.confirm("Set per-nameserver agent secrets now?", default=True):
+            interactive_targets = resolve_agent_secrets_interactively(targets)
+            set_agent_secrets(ctx, interactive_targets)
+        else:
+            click.echo("[AGENT SECRET] Skipped. You can set them later.")
+
+    except click.ClickException:
+        raise
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to initialize: {e}")
+        raise click.Abort()
+    
+# legacy code
+'''
 @cli.command('init')
 @click.option('--config', '-c', type=click.Path(exists=True), default='dns_config.yaml', help="Path to dns_config.yaml")
 @click.option('--output', '-o', type=click.Path(), default=None, help="Path to save the generated zone JSON file")
@@ -1294,6 +1693,7 @@ def init(ctx, config, output):
             click.echo(f"[REGISTER] Unknown registration response: {result}")
     except Exception as e:
         click.echo(f"[ERROR] Failed to initialize: {e}")
+'''
 
 @cli.command("set-config")
 @click.option('--file', '-f', type=click.Path(exists=True), required=True, help="Path to dns_config.yaml")
@@ -1512,7 +1912,11 @@ def deregister(ctx, domain):
         status = result.get("status")
 
         if status == "deregistered":
-            click.echo(f"[SUCCESS] Domain '{normalized_domain}' has been deregistered and zone files deleted.")
+            deleted_agent_credentials = result.get("deleted_agent_credentials", 0)
+            click.echo(
+                f"[SUCCESS] Domain '{domain}' has been deregistered, "
+                f"zone files deleted, and {deleted_agent_credentials} stored agent secret(s) removed."
+            )
         elif status == "not-found":
             click.echo(f"[INFO] Domain '{normalized_domain}' was not registered.")
         else:

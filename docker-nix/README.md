@@ -44,7 +44,7 @@ dnp records -d yourdomain.com
 
 The .env file supports:
 ```bash
-AGENT_SECRET=changeme
+APP_MASTER_KEY=changeme
 DNSPROOF_PASSWORD=changeme
 DB_PATH=/app/dnsproof.db
 ```
