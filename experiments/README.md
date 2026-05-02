@@ -1,164 +1,91 @@
 # Experiments
 
-This directory contains experimental integrity-layer research modules
-for DNSProof.
+This directory contains experimental integrity-layer modules for DNSProof.
 
-Code under `experiments/`:
-
--   Is **not** part of the core DNSProof trust model
--   Is not covered by API stability guarantees
--   May change without backward compatibility
--   Is intentionally isolated from production routes and signing flows
-
-These modules evaluate potential future extensions to DNSProof's
-cryptographic integrity architecture.
-
-## Merkle-Based DNS Change Log Anchoring (Experimental)
-
-### Objective
-
-DNSProof currently guarantees:
-
--   Deterministic canonical JSON serialization of zone state
--   Ed25519-signed DNS change events
--   Snapshot-level hash verification per mutation
-
-This experiment evaluates an additional structural integrity layer:
-
-> A deterministic, append-only Merkle tree constructed over ordered
-> `DNSChangeLog.snapshot_hash` values.
-
-The purpose is to explore whether DNS mutation history can be:
-
--   Structurally verifiable
--   Compactly anchored via a single root hash
--   Compared across independent instances
--   Optionally published via DNS (e.g., `_merkle.<domain>`)
-
-This design follows principles used in append-only transparency logs and
-Merkle-based audit systems.
+These are **not part of the core trust model** and may change without compatibility guarantees.
 
 
-## Deterministic Ordering
+## Merkle Log (Experimental)
 
-Merkle leaves are derived from `DNSChangeLog.snapshot_hash`.
+This experiment builds a deterministic Merkle tree over DNS change history using:
 
-Ordering is strictly defined as:
+- ordered `DNSChangeLog.snapshot_hash` values  
+- SHA-256 hashing  
+- append-only construction  
 
-ORDER BY created_at ASC, id ASC
+Goal:
 
-Both fields are required to ensure deterministic ordering across
-instances.
-
-Changing the ordering rule invalidates compatibility with previously
-computed roots.
-
-## Merkle Specification (v1.1)
-
-### Hash Function
-
--   SHA256
--   Hex-encoded (lowercase)
--   UTF-8 input encoding
--   No newline or prefix characters
-
-### Domain Separation
-
-To prevent structural ambiguity between leaf and internal node hashes:
-
--   Leaf hash: sha256("leaf:" + snapshot_hash)
-
--   Parent hash: sha256("node:" + left_hex + right_hex)
-
-Domain prefixes ("leaf:", "node:") ensure leaf and node namespaces are
-disjoint.
-
-### Tree Construction Rules
-
--   Level 0 consists of leaf hashes.
--   Each parent node is computed from adjacent pairs.
--   If a level contains an odd number of nodes, the final node is
-    duplicated.
--   The Merkle root is the sole remaining node at the final level.
-
-Tree construction is O(n) and currently performed in memory.
+- evaluate whether DNS mutation history can be:
+  - structurally verifiable  
+  - compactly represented by a single root  
+  - compared across independent instances  
+  - optionally published via DNS (`_merkle.<domain>`)  
 
 
-## Included Modules
+## How it works
+
+- Leaves: `sha256("leaf:" + snapshot_hash)`   
+- Parent: `sha256("node:" + left + right)`  
+- Ordering: `(created_at ASC, id ASC)`  
+- Odd nodes: last leaf is duplicated  
+
+This ensures deterministic tree construction across environments.
+
+
+## Included scripts
 
 ### `merkle_log.py`
 
-Functions:
+- builds Merkle tree from local logs  
+- computes root  
+- generates inclusion proofs  
+- verifies proofs locally  
 
--   Deterministically fetch ordered `snapshot_hash` entries
--   Build full Merkle tree
--   Compute Merkle root
--   Generate inclusion proof for a given index
--   Verify inclusion proof locally
-
-Operates exclusively on the local SQLite database.
-
-No production APIs are modified.
+Runs against the local database.
 
 
 ### `verify_merkle_dns.py`
 
-Extends local Merkle root computation with DNS publication comparison.
+- computes local Merkle root  
+- fetches `_merkle.<domain>` TXT record  
+- compares DNS-published root with local root  
 
-Features:
-
--   Computes local Merkle root from ordered logs
--   Queries `_merkle.<domain>` TXT record
--   Supports:
-    -   Recursive resolver lookup
-    -   Direct authoritative nameserver query
--   Compares normalized DNS TXT value against local root
-
-This enables external publication validation without modifying the
-DNSProof signing model.
+Supports both resolver-based and direct nameserver queries. :contentReference[oaicite:3]{index=3}  
 
 
-## Trust Model Boundaries
+## What this enables
 
-This module does **not**:
-
--   Sign the Merkle root with the DNSProof signing key
--   Provide multi-party consensus or witness validation
--   Anchor roots to external timestamp authorities
--   Replace existing Ed25519 snapshot signatures
-
-Current root publication relies on DNS integrity (DNSSEC recommended).
-
-The Ed25519-signed snapshot hashes remain the primary cryptographic
-trust anchor.
+- compact commitment to full DNS change history  
+- external publication of state (via DNS)  
+- independent verification across systems  
 
 
-## Research Motivation
+## Boundaries
 
-This experiment evaluates whether DNSProof can evolve from:
+This experiment does **not**:
 
-Independent, signed mutation events
+- sign the Merkle root  
+- replace existing Ed25519 snapshot signatures  
+- provide consensus or external anchoring  
+
+Current trust still relies on signed snapshot hashes.
+
+
+## Status
+
+Experimental.
+
+- schema and hashing rules may change  
+- not intended for production use  
+- no compatibility guarantees  
+
+
+## Notes
+
+This work explores extending DNSProof from:
+
+  **individually signed events**
 
 to:
 
-Structurally verifiable append-only mutation history
-
-Potential future directions include:
-
--   Third-party log verification
--   Root signing by active signing key
--   External anchoring (e.g., timestamp services)
--   Cross-instance state comparison
--   Public audit modes
-
-No integration roadmap is currently committed.
-
-
-## Stability Notice
-
-This is experimental code.
-
--   The Merkle specification may evolve.
--   Hash construction rules may change.
--   Data compatibility across versions is not guaranteed.
--   Production systems must not depend on this module.
+  **structurally verifiable, append-only history**

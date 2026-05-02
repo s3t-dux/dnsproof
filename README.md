@@ -1,160 +1,176 @@
 # DNSProof
 
-**DNSProof** is an open, reproducible, and self-hostable toolkit for running authoritative nameservers with cryptographically signed changelogs and DNSSEC support. It brings full auditability and developer-friendly control to a part of the internet that's long been opaque, centralized, and unverifiable.
+**Portable, legible, and verifiable DNS**.
 
-## Key Features
+DNSProof is a system and set of tools for managing DNS as a **deterministic, auditable state**, rather than an opaque control plane tied to a provider.
 
-- **Deterministic DNS change logs**  
-  Track every DNS record update with deterministic, cryptographically verifiable history.
+In conventional workflows, DNS configuration is stored and mutated inside provider systems. While changes can be applied and observed, the resulting state is not preserved in a way that allows independent reconstruction or verification.
 
-- **DNSSEC made practical**  
-  Integrated DNSSEC support with automatic zone signing and key management.
+DNSProof takes a different approach:
 
-- **Minimal 2-VM architecture**  
-  Lightweight and production-tested setup for running your own nameservers.
+**DNS is treated as a state that can be reproduced, hashed, and verified independently.**
 
-- **API + CLI-based control plane**  
-  Submit, verify, and sign DNS changes programmatically — ideal for GitOps and automation.
+## What DNSProof enables
 
-- **Built-in audit log explorer**  
-  Easily inspect historical changes through a simple web UI or command line.
+DNSProof makes DNS state easier to **reproduce, inspect, and verify** across environments.
 
-- **Reproducibility manifest**  
-  To spin up the DNSProof CLI and backend using Docker or Nix:  
-  
-  [docker-nix/](./docker-nix/)
+In typical DNS workflows, configuration is tied to provider-specific systems. While changes can be applied and observed, there is no portable representation of state, and limited ability to reconstruct or verify it independently.  
 
-## Why DNSProof?
+DNSProof introduces a simple structure:
 
-Most current DNS systems are either:
-- **Centralized SaaS providers** (e.g., Cloudflare, Route53) that offer convenience but no visibility, or
-- **Self-hosted BIND/CoreDNS setups** that are opaque, fragile, and nearly impossible to audit.
+- a canonical representation of DNS state
+- a recorded sequence of changes
+- and a cryptographic snapshot (hash) of that state
 
-DNSProof solves this by providing:
-- A semantic understanding of record changes — not just raw diffs
-- Cryptographic proof of every mutation
-- Full user sovereignty without third-party lock-in
-- A realistic, scriptable setup that's already been battle-tested in production via the [StackDNS.io](https://stackdns.io) platform
+Together, these allow DNS configurations to be:
 
-## Project Status
+- exported and re-applied across environments
+- compared reliably
+- verified independently
 
-DNSProof is actively evolving from StackDNS’s live infrastructure.
+## Repository scope
 
-The current public repository includes:
+This repository exposes the CLI (demo), verification surface, and supporting experiments of DNSProof.
 
-- A working CLI (`cli/dnp.py`) for backend-connected DNSProof workflows
-- Standalone offline log verification tools
-- Sample configs, demo logs, and developer documentation
-- Reproducibility materials for public verification and development
+Included:
 
-The production backend and nameserver provisioning layer are not yet public.
-They are being extracted for a later open release.
+- `cli/` — command-line interface for interacting with DNSProof systems (demo surface)
+- `examples/` — standalone verification examples
+- `experiments/` — research and prototype implementations (e.g. Merkle trees)
+
+Not included in this repository:
+
+- backend services for state management and logging
+- frontend UI for domain and system interaction
+- nameserver provisioning tooling
+- full packaging and distribution configuration (e.g. `pyproject.toml`)
+
+The public repository is intended to surface the interaction and verification model, rather than the full deployment stack.
+
+## What DNSProof does
+
+DNSProof defines DNS as a structured state with three properties:
+
+### Canonical state
+A complete, normalized representation of DNS records.
+
+- Stored as structured JSON
+- Deterministically serialized
+- Independent of provider-specific formats
+
+### Change history
+Each DNS modification is recorded as a structured event.
+
+- Add / update / delete operations
+- Timestamped and attributable
+- Produces a new state snapshot
+
+### Verifiable snapshots
+Each state can be reduced to a stable cryptographic identifier.
+
+- Deterministic hashing (e.g. SHA-256 over normalized state)
+- Snapshot comparison enables constant-time equality checks
+- Changes produce new, independently verifiable states
+
+This allows DNS state to be:
+- reconstructed from history
+- compared across environments
+- verified without relying on the original system
+
+## CLI usage
+
+The dnp CLI provides an interface for interacting with DNSProof-enabled systems.
+
+Example
+```bash
+# Add a DNS record
+dnp add -d example.com --type A --name www --value 1.2.3.4
+
+# View current state
+dnp records -d example.com
+
+# View DNS change logs
+dnp logs-dns -d example.com
+
+# Verify a log entry
+dnp verify-log --id <log_id>
+
+# Export portable DNS state
+dnp export-domain -d example.com -o ./bundle
+```
+The CLI can also:
+- manage DNSSEC lifecycle operations
+- inspect nameserver status
+- export and import portable domain bundles
+- verify logs offline
+
+## Verification
+DNSProof emphasizes **independent verification of DNS state and changes**.
+A DNS change produces:
+- a deterministic snapshot hash
+- a signed log entry
+- a verifiable record of the transition
+
+Logs can be verified:
+- via API
+- via CLI
+- offline using exported data
+
+The `examples/` directory includes minimal, self-contained scripts for:
+- verifying DNS change logs offline
+- reproducing canonical snapshot hashing behavior
+
+These examples demonstrate the verification model without requiring a running DNSProof backend.
+
+## Experiments
+The `experiments/` directory contains prototype implementations exploring:
+- Merkle tree–based commitment structures
+- alternative verification models for DNS state
+- efficient inclusion and consistency proofs
+
+These are not required for core functionality, but inform the design of scalable verification mechanisms.
+
+## Status
+DNSProof is under active development.  
+The current repository provides:
+- a CLI for interacting with DNSProof systems (demo)
+- verifiable DNS log examples
+- experimental verification primitives
+- reproducible manifest in [`docker-nix/`](docker-nix/)
+
+The broader system continues to evolve alongside these components.
+
+## Database Backend
+
+DNSProof defaults to a local SQLite database for simple, no-setup development.  
+If no `DATABASE_URL` is provided, the backend uses `DB_PATH` and creates or opens a local SQLite database file.
+
+```env
+DB_PATH=./dnsproof.db
+```
+For more explicit deployments, `DATABASE_URL` can be set to any supported SQLAlchemy database URL. When `DATABASE_URL` is present, it takes precedence over `DB_PATH`.
+```env
+# Explicit SQLite URL
+DATABASE_URL=sqlite:///./dnsproof.db
+
+# PostgreSQL URL
+DATABASE_URL=postgresql+psycopg://dnsproof_user:password@127.0.0.1:5432/dnsproof
+```
+For PostgreSQL, create the database beforehand. DNSProof initializes its required tables on startup, but does not create the database itself.
+```bash
+createdb -U postgres -h 127.0.0.1 dnsproof
+```
+SQLite remains the recommended default for cold-start and local use. PostgreSQL is intended for more durable or multi-environment deployments.
 
 ## ▶ DNSProof CLI Demo (90s)
-
-A 90-second walkthrough of the full lifecycle: config generation, nameserver provisioning, DNS record changes, DNSSEC, and verifiable logs.
+A short walkthrough of the DNSProof lifecycle:
+- configuration generation
+- nameserver provisioning
+- DNS record changes
+- DNSSEC operations
+- verifiable change logs
 
 [Watch: DNSProof_CLI_demo.mp4](https://storage.googleapis.com/dnsproof-assets/DNSProof_CLI_demo.mp4)
-
-## Preview Resources
-
-The following files are now available in this repository:
-
-- `cli/dnp.py` — CLI entrypoint for DNS management and log verification  
-- `DNSProof_CLI_demo.mp4` — 90s CLI demo showcasing the full config–deploy–verify cycle.  
-- `docker-nix/` — Reproducible tools and envs with Docker and Nix  
-- `examples/dns_config.yaml` — Sample configuration file  
-- `examples/dnsproof.org.json` — Example zone file format  
-- `examples/demo_logs.json` — Realistic signed DNS change logs  
-- `examples/canonical_snapshot_demo.py` — Demonstrates canonical JSON serialization and SHA-256 hashing for DNS change snapshots  
-- `examples/verify_log_offline.py` — Full offline integrity check: deterministic snapshot reconstruction + Ed25519 signature verification
-
-These illustrate DNSProof’s focus on reproducibility, auditability, and developer-first UX.  
-
-### Offline Log Verification  
-DNSProof logs can be verified independently of the backend.  
-Each DNS change is signed using Ed25519 over a deterministic, canonical snapshot:  
-```json
-{
-  "timestamp": ...,
-  "domain": ...,
-  "action": ...,
-  "record": ...,
-  "user_id": ...,
-  "ip_address": ...
-}
-```
-The snapshot is serialized with `sort_keys=True`, hashed with SHA256, and signed.  
-The resulting `snapshot_hash`, `signature`, and `public_key` are stored alongside the log entry.  
-To verify a set of exported log entries:  
-```bash
-python examples/verify_log_offline.py examples/demo_logs.json
-```
-Example output:
-```bash
-Log ID: 511fbed5-...
-[OK] Snapshot integrity verified
-[OK] Signature authenticity verified
-```
-For readers who want to understand the hashing rule in isolation, a minimal example is available:
-```bash
-python examples/canonical_snapshot_demo.py
-```
-It demonstrates the exact canonical serialization and hashing behavior used throughout DNSProof.
-
-This process does not require a running DNSProof backend or database.  
-Verification depends only on deterministic serialization and standard Ed25519 cryptography.  
-
-### Log Integrity & Cryptographic Guarantees
-
-DNSProof maintains a cryptographically verifiable, append-only change log for all DNS modifications.
-Each DNS update is recorded with:
-- canonical JSON snapshot
-- SHA-256 snapshot hash
-- Ed25519 signature
-- optional Merkle anchoring (Spec v1.1)
-- strict key lifecycle tracking
-
-This enables offline verification, tamper detection, and trust-minimized auditing.  
-
-Full specification and verification instructions are documented in:
-
-[`docs/log_integrity.md`](docs/log_integrity.md)
-
----
-
-### Deterministic Zone Reconstruction
-
-DNSProof’s signed snapshots record *how* DNS changes were made, but a verifier must also understand
-*how these changes accumulate into authoritative DNS state*. To support independent auditing, the
-project now includes a formal specification of “zone state” and a deterministic reconstruction model.
-
-This document does not introduce a new algorithm; rather, it makes explicit the rules that any
-verifier can use to reconstruct a zone from its full history of signed mutations—similar to how a
-ledger can be replayed into an account balance.
-
-The specification is available here:
-
-[`docs/deterministic_zone_reconstruction.md`](docs/deterministic_zone_reconstruction.md)
-
----
-
-### Experimental Merkle Log Anchoring
-
-DNSProof also includes an experimental module exploring Merkle-based
-anchoring of ordered `DNSChangeLog.snapshot_hash` values. This is not
-part of the core trust model, but serves as forward-looking research on
-structurally verifiable append-only histories.
-
-The implementation and documentation are available under:
-- `experiments/merkle_log.py`
-- `experiments/verify_merkle_dns.py`
-- `experiments/README.md`
-
-These tools allow you to compute a local Merkle root, generate inclusion
-proofs, and optionally compare the local root with a published
-`_merkle.<domain>` TXT record. The experiment is intentionally isolated
-from production signing logic.
 
 ---
 
