@@ -267,6 +267,59 @@ This command:
 
 This step is required before any DNS records or configuration updates can be applied.
 
+
+### Add Hosted Zone
+
+Add a new authoritative zone to an existing DNSProof nameserver fleet.
+
+This is used when the nameserver infrastructure already exists, and you want another domain to be served by those same nameservers. For example, `example.org` can be hosted on nameservers under `dnsproof.org` without provisioning a new nameserver VM.
+
+```bash
+dnp add-hosted-zone \
+  --domain example.org \
+  --nameserver-domain dnsproof.org
+```
+
+This command:
+- Registers the new hosted zone in the backend
+- Generates an initial SOA/NS zone state for the new domain
+- Stores a generated `mode: hosted_zone` config for the new domain
+- Reuses the existing nameserver fleet and agent credentials from `--nameserver-domain`
+- Pushes the new zone to the existing nameserver agents
+- Prints registrar delegation records to apply at the domain registrar
+
+Example delegation output:
+```bash
+example.org NS ns1.dnsproof.org.
+example.org NS ns2.dnsproof.org.
+```
+
+Use `--force` to overwrite an already registered hosted zone:
+```bash
+dnp add-hosted-zone \
+  --domain example.org \
+  --nameserver-domain dnsproof.org \
+  --force
+```
+
+Optional flags:
+```bash
+--ttl 3600          # TTL for generated SOA/NS records
+--no-txt-marker    # Skip the default DNSProof marker TXT record
+--json             # Print raw structured output
+```
+
+Conceptually:
+- `dnp init` initializes a self-hosted / in-bailiwick DNSProof domain
+- `dnp add-hosted-zone` adds another zone to an already provisioned nameserver fleet
+
+After adding the hosted zone, update the domain registrar to delegate the domain to the NS records printed by the command. Then verify:
+```bash
+dnp records -d example.org
+dnp ns-status -d example.org
+dnp ns-propagation -d example.org
+```
+
 ### Set-agent-secret
 
 Update the app-side encrypted agent secret for a specific nameserver.
@@ -534,26 +587,140 @@ Add a DNS record.
 The new record is deployed immediately and logged with a signed snapshot.
 ```bash
 dnp add --domain dnsproof.org --type A --name www --value 1.2.3.4
+dnp add --domain dnsproof.org --type TXT --name @ --value "hello world"
+```
+Structured records use type-specific fields.
+MX:
+```bash
+dnp add \
+  --domain dnsproof.org \
+  --type MX \
+  --name @ \
+  --priority 10 \
+  --value mail.dnsproof.org.
+```
+SRV:
+```bash
+dnp add \
+  --domain dnsproof.org \
+  --type SRV \
+  --name _sip._tcp \
+  --priority 10 \
+  --weight 5 \
+  --port 5060 \
+  --target sip.dnsproof.org.
+```
+CAA:
+```bash
+dnp add \
+  --domain dnsproof.org \
+  --type CAA \
+  --name @ \
+  --flag 0 \
+  --tag issue \
+  --value letsencrypt.org
 ```
 
 ### Edit  
 Edit an existing record.  
 Signed before/after snapshots ensure full traceability.
+
+The safest path is to use record_id from dnp records:
 ```bash
-dnp edit --domain dnsproof.org \
-         --type A \
-         --old-name www \
-         --old-value 1.2.3.4 \
-         --new-name www \
-         --new-value 5.6.7.8
+dnp records --domain dnsproof.org --type MX
+
+dnp edit \
+  --domain dnsproof.org \
+  --record-id <record-id> \
+  --new-type MX \
+  --new-name @ \
+  --new-priority 20 \
+  --new-value mail2.dnsproof.org.
 ```
+You can also identify the old record by its full structured identity:
+```bash
+dnp edit \
+  --domain dnsproof.org \
+  --type SRV \
+  --old-name _sip._tcp \
+  --old-priority 10 \
+  --old-weight 5 \
+  --old-port 5060 \
+  --old-target sip.dnsproof.org. \
+  --new-name _sip._tcp \
+  --new-priority 10 \
+  --new-weight 10 \
+  --new-port 5060 \
+  --new-target sip.dnsproof.org.
+```
+For CAA records:
+```bash
+dnp edit \
+  --domain dnsproof.org \
+  --type CAA \
+  --old-name @ \
+  --old-flag 0 \
+  --old-tag issue \
+  --old-value letsencrypt.org \
+  --new-name @ \
+  --new-flag 0 \
+  --new-tag issue \
+  --new-value pki.goog
+``` 
+
 
 ### Delete  
 Delete a DNS record.  
 The record is preserved in signed logs before removal.
+
+The safest path is to delete by record_id:
 ```bash
-dnp delete --domain dnsproof.org --type TXT --name @ --value "hello world"
+dnp records --domain dnsproof.org --type CAA
+
+dnp delete \
+  --domain dnsproof.org \
+  --record-id <record-id>
 ```
+You can also delete by full structured record identity.  
+A:
+```bash
+dnp delete \
+  --domain dnsproof.org \
+  --type A \
+  --name @ \
+  --value 1.2.3.4
+```
+MX:
+```bash
+dnp delete \
+  --domain dnsproof.org \
+  --type MX \
+  --name @ \
+  --priority 10 \
+  --value mail.dnsproof.org.
+```
+SRV:
+```bash
+dnp delete \
+  --domain dnsproof.org \
+  --type SRV \
+  --name _sip._tcp \
+  --priority 10 \
+  --weight 5 \
+  --port 5060 \
+  --target sip.dnsproof.org.
+```
+CAA:
+```bash
+dnp delete \
+  --domain dnsproof.org \
+  --type CAA \
+  --name @ \
+  --flag 0 \
+  --tag issue \
+  --value letsencrypt.org
+```
+For structured records, the type-specific fields are part of the canonical record identity. If deletion or editing fails, run `dnp records --domain <domain> --type <TYPE>` and copy the exact fields or use the displayed `record_id`.
 
 
 ## DNSSEC Management

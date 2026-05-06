@@ -34,13 +34,134 @@ def generate_record_id(record: dict) -> str:
     content = json.dumps({
         "type": record["type"],
         "name": record["name"],
-        "value": record["value"],
+        "value": record.get("value"),
         "priority": record.get("priority"),
+        "weight": record.get("weight"),
         "port": record.get("port"),
         "target": record.get("target"),
+        "flag": record.get("flag"),
+        "tag": record.get("tag"),
         "ttl": record.get("ttl", 3600),
     }, sort_keys=True)
     return hashlib.sha256(content.encode()).hexdigest()
+
+def normalize_rtype(rtype: str) -> str:
+    value = (rtype or "").strip().upper()
+    if not value:
+        raise click.ClickException("Record type cannot be empty.")
+    return value
+
+
+def clean_record(record: dict) -> dict:
+    return {k: v for k, v in record.items() if v is not None}
+
+
+def build_record(
+    rtype: str,
+    name: str,
+    value: str | None = None,
+    ttl: int | None = None,
+    priority: int | None = None,
+    weight: int | None = None,
+    port: int | None = None,
+    target: str | None = None,
+    flag: int | None = None,
+    tag: str | None = None,
+) -> dict:
+    """
+    Build a canonical DNSProof record from CLI inputs.
+
+    DNSProof keeps SRV and CAA structured rather than cramming
+    type-specific fields into a string value.
+    """
+    rtype = normalize_rtype(rtype)
+    name = (name or "").strip()
+
+    if not name:
+        raise click.ClickException("Record name cannot be empty.")
+
+    record = {
+        "type": rtype,
+        "name": name,
+        "ttl": ttl,
+    }
+
+    if rtype in {"A", "AAAA", "CNAME", "TXT", "NS"}:
+        if value is None:
+            raise click.ClickException(f"{rtype} record requires --value.")
+        record["value"] = value
+
+    elif rtype == "MX":
+        if value is None:
+            raise click.ClickException("MX record requires --value.")
+        if priority is None:
+            raise click.ClickException("MX record requires --priority.")
+        record["value"] = value
+        record["priority"] = priority
+
+    elif rtype == "SRV":
+        missing = []
+        if priority is None:
+            missing.append("--priority")
+        if weight is None:
+            missing.append("--weight")
+        if port is None:
+            missing.append("--port")
+        if target is None:
+            missing.append("--target")
+
+        if missing:
+            raise click.ClickException(
+                "SRV record requires " + ", ".join(missing) + "."
+            )
+
+        record["priority"] = priority
+        record["weight"] = weight
+        record["port"] = port
+        record["target"] = target
+
+    elif rtype == "CAA":
+        missing = []
+        if flag is None:
+            missing.append("--flag")
+        if tag is None:
+            missing.append("--tag")
+        if value is None:
+            missing.append("--value")
+
+        if missing:
+            raise click.ClickException(
+                "CAA record requires " + ", ".join(missing) + "."
+            )
+
+        record["flag"] = flag
+        record["tag"] = tag
+        record["value"] = value
+
+    else:
+        raise click.ClickException(
+            f"Unsupported record type '{rtype}'. "
+            "Supported: A, AAAA, CNAME, MX, TXT, SRV, CAA, NS."
+        )
+
+    return clean_record(record)
+
+def format_record_value(rec: dict) -> str:
+    rtype = (rec.get("type") or "").upper()
+
+    if rtype == "SRV":
+        return (
+            f"{rec.get('priority')} {rec.get('weight')} "
+            f"{rec.get('port')} {rec.get('target')}"
+        )
+
+    if rtype == "CAA":
+        return f"{rec.get('flag')} {rec.get('tag')} {rec.get('value')}"
+
+    if rtype == "MX":
+        return f"{rec.get('priority')} {rec.get('value')}"
+
+    return str(rec.get("value", ""))
 
 def api_call(method, *args, **kwargs):
     """
@@ -61,6 +182,63 @@ def api_call(method, *args, **kwargs):
     except httpx.RequestError as e:
         click.echo(f"[ERROR] Network error: {e}")
         raise click.Abort()
+
+def parse_snapshot(snapshot):
+    if not snapshot:
+        return None
+
+    if isinstance(snapshot, dict):
+        return snapshot
+
+    if isinstance(snapshot, str):
+        if snapshot.strip().lower() == "null":
+            return None
+        try:
+            parsed = json.loads(snapshot)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+
+    return None
+
+
+def format_dns_record_display(record_or_entry: dict) -> str:
+    """
+    Human-readable DNS record display for CLI output.
+
+    Accepts either:
+    - canonical record snapshot: {type, name, value, priority, ...}
+    - DNSChangeLog entry: {record_type, record_name, record_value, ...}
+    """
+    if not record_or_entry:
+        return "?"
+
+    rtype = (
+        record_or_entry.get("type")
+        or record_or_entry.get("record_type")
+        or ""
+    ).upper()
+
+    if rtype == "SRV":
+        priority = record_or_entry.get("priority")
+        weight = record_or_entry.get("weight")
+        port = record_or_entry.get("port")
+        target = record_or_entry.get("target")
+        return f"{priority} {weight} {port} {target}"
+
+    if rtype == "MX":
+        priority = record_or_entry.get("priority")
+        value = record_or_entry.get("value", record_or_entry.get("record_value"))
+        return f"{priority} {value}" if priority is not None else str(value)
+
+    if rtype == "CAA":
+        flag = record_or_entry.get("flag")
+        tag = record_or_entry.get("tag")
+        value = record_or_entry.get("value", record_or_entry.get("record_value"))
+        return f"{flag} {tag} {value}"
+
+    value = record_or_entry.get("value", record_or_entry.get("record_value"))
+    return str(value) if value is not None else "?"
 
 def json_option():
     return click.option("--json", "-j", "as_json", is_flag=True, help="Output raw JSON")
@@ -235,7 +413,7 @@ def cli(ctx, api_url, password):
 
 @click.group()
 def signing():
-    """Signing key lifecycle commands."""
+    """Run 'dnp signing --help' for signing key lifecycle commands """
     pass
 
 cli.add_command(signing)
@@ -275,11 +453,12 @@ def records(ctx, as_json, domain, rtype):
         click.echo("-" * 50)
 
         for rec in records:
-            ttl = f" TTL={rec['ttl']}" if rec.get("ttl") else ""
-            pri = f" PRI={rec['priority']}" if rec.get("priority") else ""
+            ttl = f" TTL={rec['ttl']}" if rec.get("ttl") is not None else ""
+            rendered_value = format_record_value(rec)
+
             click.echo(
                 f"[{rec['record_id'][:8]}...] "
-                f"{rec['type']} {rec['name']} -> {rec['value']}{ttl}{pri}"
+                f"{rec['type']} {rec['name']} -> {rendered_value}{ttl}"
             )
 
     except Exception as e:
@@ -290,98 +469,256 @@ def records(ctx, as_json, domain, rtype):
 @click.option('--domain', '-d', required=True)
 @click.option('--type', 'rtype', required=True)
 @click.option('--name', required=True)
-@click.option('--value', required=True)
-@click.option('--ttl', default=3600, show_default=True)
+@click.option('--value', required=False)
+@click.option('--ttl', type=int, default=3600, show_default=True)
+@click.option('--priority', type=int, default=None, help="MX/SRV priority")
+@click.option('--weight', type=int, default=None, help="SRV weight")
+@click.option('--port', type=int, default=None, help="SRV port")
+@click.option('--target', default=None, help="SRV target")
+@click.option('--flag', type=int, default=None, help="CAA flag")
+@click.option('--tag', default=None, help="CAA tag")
 @requires_auth
-def add_record(ctx, as_json, domain, rtype, name, value, ttl):
+def add_record(
+    ctx,
+    as_json,
+    domain,
+    rtype,
+    name,
+    value,
+    ttl,
+    priority,
+    weight,
+    port,
+    target,
+    flag,
+    tag,
+):
     """Add a DNS record"""
+    try:
+        normalized_domain = domain.strip().lower()
 
-    normalized_domain = domain.strip().lower()
+        record = build_record(
+            rtype=rtype,
+            name=name,
+            value=value,
+            ttl=ttl,
+            priority=priority,
+            weight=weight,
+            port=port,
+            target=target,
+            flag=flag,
+            tag=tag,
+        )
 
-    payload = {
-        "domain": normalized_domain,
-        "records": [{
-            "type": rtype,
-            "name": name,
-            "value": value,
-            "ttl": ttl
-        }]
-    }
-    r = api_call(httpx.post, f"{API_URL}/api/dns/records", json=payload, headers=make_headers(ctx))
-    print_output(r, as_json)
+        payload = {
+            "domain": normalized_domain,
+            "records": [record],
+        }
+
+        r = api_call(
+            httpx.post,
+            f"{API_URL}/api/dns/records",
+            json=payload,
+            headers=make_headers(ctx),
+        )
+        print_output(r, as_json)
+
+    except click.ClickException:
+        raise
+    except Exception as e:
+        click.echo(f"[ERROR] Failed to add record: {e}")
+        raise click.Abort()
 
 @cli.command('record-id')
-@click.option('--type', 'rtype', required=True, help='Record type (e.g., A, TXT, MX)')
-@click.option('--name', required=True, help='Record name (e.g., @, www)')
-@click.option('--value', required=True, help='Record value (e.g., 1.2.3.4, \"hello\")')
-def record_id(rtype, name, value):
-    """Compute the record_id for a given type+name+value"""
+@click.option('--type', 'rtype', required=True, help='Record type (e.g., A, TXT, MX, SRV, CAA)')
+@click.option('--name', required=True, help='Record name (e.g., @, www, _sip._tcp)')
+@click.option('--value', required=False, help='Record value')
+@click.option('--ttl', type=int, default=3600, show_default=True)
+@click.option('--priority', type=int, default=None, help="MX/SRV priority")
+@click.option('--weight', type=int, default=None, help="SRV weight")
+@click.option('--port', type=int, default=None, help="SRV port")
+@click.option('--target', default=None, help="SRV target")
+@click.option('--flag', type=int, default=None, help="CAA flag")
+@click.option('--tag', default=None, help="CAA tag")
+def record_id(rtype, name, value, ttl, priority, weight, port, target, flag, tag):
+    """Compute the record_id for a DNS record"""
     try:
-        record = {
-            "type": rtype,
-            "name": name,
-            "value": value
-        }
+        record = build_record(
+            rtype=rtype,
+            name=name,
+            value=value,
+            ttl=ttl,
+            priority=priority,
+            weight=weight,
+            port=port,
+            target=target,
+            flag=flag,
+            tag=tag,
+        )
         rid = generate_record_id(record)
         click.echo(rid)
+
+    except click.ClickException:
+        raise
     except Exception as e:
         click.echo(f"Error: {e}")
+        raise click.Abort()
 
 @cli.command('edit')
 @json_option()
 @click.option('--domain', '-d', required=True)
 @click.option('--record-id', required=False)
+
 @click.option('--type', 'rtype', required=False)
+
 @click.option('--old-name', required=False)
 @click.option('--old-value', required=False)
+@click.option('--old-ttl', type=int, default=3600, show_default=True)
+@click.option('--old-priority', type=int, default=None)
+@click.option('--old-weight', type=int, default=None)
+@click.option('--old-port', type=int, default=None)
+@click.option('--old-target', default=None)
+@click.option('--old-flag', type=int, default=None)
+@click.option('--old-tag', default=None)
+
+@click.option('--new-type', required=False, help="New record type. Defaults to --type.")
 @click.option('--new-name', required=True)
-@click.option('--new-value', required=True)
-@click.option('--new-ttl', type=int, default=None)
+@click.option('--new-value', required=False)
+@click.option('--new-ttl', type=int, default=3600, show_default=True)
+@click.option('--new-priority', type=int, default=None)
+@click.option('--new-weight', type=int, default=None)
+@click.option('--new-port', type=int, default=None)
+@click.option('--new-target', default=None)
+@click.option('--new-flag', type=int, default=None)
+@click.option('--new-tag', default=None)
 @requires_auth
-def edit_record(ctx, as_json, domain, record_id, rtype, old_name, old_value, new_name, new_value, new_ttl):
-    """Edit a DNS record using record-id OR type+old-name+old-value"""
+def edit_record(
+    ctx,
+    as_json,
+    domain,
+    record_id,
+    rtype,
+    old_name,
+    old_value,
+    old_ttl,
+    old_priority,
+    old_weight,
+    old_port,
+    old_target,
+    old_flag,
+    old_tag,
+    new_type,
+    new_name,
+    new_value,
+    new_ttl,
+    new_priority,
+    new_weight,
+    new_port,
+    new_target,
+    new_flag,
+    new_tag,
+):
+    """Edit a DNS record using record-id OR full structured old-record identity"""
     try:
-        if not record_id and not (rtype and old_name and old_value):
-            raise click.UsageError("Either --record-id OR all of --type, --old-name, and --old-value must be provided.")
+        if not record_id and not (rtype and old_name):
+            raise click.UsageError(
+                "Either --record-id OR --type and --old-name with required type-specific old fields must be provided."
+            )
+
+        effective_new_type = new_type or rtype
+        if not effective_new_type:
+            raise click.UsageError("--new-type is required when --record-id is used without --type.")
 
         normalized_domain = domain.strip().lower()
 
-        # Compose new record (after edit)
-        new_record = {
-            "type": rtype if rtype else "TXT",  # Default to TXT if not specified
-            "name": new_name,
-            "value": new_value
-        }
-        if new_ttl is not None:
-            new_record["ttl"] = new_ttl
+        new_record = build_record(
+            rtype=effective_new_type,
+            name=new_name,
+            value=new_value,
+            ttl=new_ttl,
+            priority=new_priority,
+            weight=new_weight,
+            port=new_port,
+            target=new_target,
+            flag=new_flag,
+            tag=new_tag,
+        )
 
-        # Build edit payload
         if record_id:
             edit_payload = {
                 "record_id": record_id,
-                "new": new_record
+                "new": new_record,
             }
         else:
-            old_record = {
-                "type": rtype,
-                "name": old_name,
-                "value": old_value
-            }
+            old_record = build_record(
+                rtype=rtype,
+                name=old_name,
+                value=old_value,
+                ttl=old_ttl,
+                priority=old_priority,
+                weight=old_weight,
+                port=old_port,
+                target=old_target,
+                flag=old_flag,
+                tag=old_tag,
+            )
             edit_payload = {
                 "old": old_record,
-                "new": new_record
+                "new": new_record,
             }
 
         payload = {
             "domain": normalized_domain,
-            "edits": [edit_payload]
+            "edits": [edit_payload],
         }
 
-        r = api_call(httpx.put, f"{API_URL}/api/dns/records", json=payload, headers=make_headers(ctx))
-        print_output(r, as_json)
+        r = api_call(
+            httpx.put,
+            f"{API_URL}/api/dns/records",
+            json=payload,
+            headers=make_headers(ctx),
+        )
+        data = r.json()
 
+        if as_json:
+            click.echo(json.dumps(data, indent=2))
+            return
+
+        updated_count = data.get("updated_count", 0)
+        skipped = data.get("skipped", [])
+
+        if updated_count > 0:
+            click.echo(f"[UPDATED] {updated_count} record(s) updated.")
+            for rid in data.get("deleted_ids", []):
+                click.echo(f"  - {rid}")
+
+        if skipped:
+            click.echo("")
+            click.echo(f"[WARNING] {len(skipped)} record(s) were not updated.")
+            for item in skipped:
+                rid = item.get("record_id", "-")
+                err = item.get("error", "-")
+                click.echo(f"  - {rid}: {err}")
+
+        if updated_count == 0 and skipped:
+            click.echo("")
+            click.echo("No records were updated. The record may not match the current canonical zone.")
+            if rtype:
+                click.echo("Tip:")
+                click.echo(f"  dnp records -d {normalized_domain} --type {rtype.upper()}")
+            else:
+                click.echo("Tip:")
+                click.echo(f"  dnp records -d {normalized_domain}")
+            raise click.Abort()
+
+        if not skipped and updated_count == 0:
+            click.echo("[WARNING] No records were updated.")
+
+    except click.ClickException:
+        raise
     except Exception as e:
-        click.echo(f"Error: {e}")
+        click.echo(f"[ERROR] Failed to edit record: {e}")
+        raise click.Abort()
 
 @cli.command('delete')
 @json_option()
@@ -390,31 +727,60 @@ def edit_record(ctx, as_json, domain, record_id, rtype, old_name, old_value, new
 @click.option('--type', 'rtype', required=False)
 @click.option('--name', required=False)
 @click.option('--value', required=False)
+@click.option('--ttl', type=int, default=3600, show_default=True)
+@click.option('--priority', type=int, default=None, help="MX/SRV priority")
+@click.option('--weight', type=int, default=None, help="SRV weight")
+@click.option('--port', type=int, default=None, help="SRV port")
+@click.option('--target', default=None, help="SRV target")
+@click.option('--flag', type=int, default=None, help="CAA flag")
+@click.option('--tag', default=None, help="CAA tag")
 @requires_auth
-def delete_record(ctx, as_json, domain, record_id, rtype, name, value):
-    """Delete a DNS record by record-id OR type+name+value"""
+def delete_record(
+    ctx,
+    as_json,
+    domain,
+    record_id,
+    rtype,
+    name,
+    value,
+    ttl,
+    priority,
+    weight,
+    port,
+    target,
+    flag,
+    tag,
+):
+    """Delete a DNS record by record-id OR full structured record identity"""
     try:
-        if not record_id and not (rtype and name and value):
+        if not record_id and not (rtype and name):
             raise click.UsageError(
-                "Either --record-id OR all of --type, --name, and --value must be provided."
+                "Either --record-id OR --type and --name with required type-specific fields must be provided."
             )
 
         normalized_domain = domain.strip().lower()
 
-        # Backend resolves identity
         if record_id:
             payload = {
                 "domain": normalized_domain,
-                "record_ids": [record_id]
+                "record_ids": [record_id],
             }
         else:
+            record = build_record(
+                rtype=rtype,
+                name=name,
+                value=value,
+                ttl=ttl,
+                priority=priority,
+                weight=weight,
+                port=port,
+                target=target,
+                flag=flag,
+                tag=tag,
+            )
             payload = {
                 "domain": normalized_domain,
-                "records": [{
-                    "type": rtype,
-                    "name": name,
-                    "value": value
-                }]
+                "records": [record],
             }
 
         r = api_call(
@@ -422,12 +788,49 @@ def delete_record(ctx, as_json, domain, record_id, rtype, name, value):
             "DELETE",
             f"{API_URL}/api/dns/records",
             json=payload,
-            headers=make_headers(ctx)
+            headers=make_headers(ctx),
         )
-        print_output(r, as_json)
+        data = r.json()
 
+        if as_json:
+            click.echo(json.dumps(data, indent=2))
+            return
+
+        deleted_count = data.get("deleted_count", 0)
+        skipped = data.get("skipped", [])
+
+        if deleted_count > 0:
+            click.echo(f"[DELETED] {deleted_count} record(s) deleted.")
+            for rid in data.get("deleted_ids", []):
+                click.echo(f"  - {rid}")
+
+        if skipped:
+            click.echo("")
+            click.echo(f"[WARNING] {len(skipped)} record(s) were not deleted.")
+            for item in skipped:
+                rid = item.get("record_id", "-")
+                err = item.get("error", "-")
+                click.echo(f"  - {rid}: {err}")
+
+        if deleted_count == 0 and skipped:
+            click.echo("")
+            click.echo("No records were deleted. The record may not match the current canonical zone.")
+            if rtype:
+                click.echo("Tip:")
+                click.echo(f"  dnp records -d {normalized_domain} --type {rtype.upper()}")
+            else:
+                click.echo("Tip:")
+                click.echo(f"  dnp records -d {normalized_domain}")
+            raise click.Abort()
+
+        if not skipped and deleted_count == 0:
+            click.echo("[WARNING] No records were deleted.")
+
+    except click.ClickException:
+        raise
     except Exception as e:
-        click.echo(f"Error: {e}")
+        click.echo(f"[ERROR] Failed to delete record: {e}")
+        raise click.Abort()
 
 @cli.command('dump-zone')
 @click.option('--domain', '-d', required=True)
@@ -795,28 +1198,26 @@ def logs_dns(ctx, as_json, domain, limit):
         normalized_domain = domain.strip().lower()
         url += f"&domain={normalized_domain}"
 
-    def extract_value(snapshot):
-        if isinstance(snapshot, dict):
-            return snapshot.get("value", "?")
-        return "?"
-
     r = api_call(httpx.get, url, headers=make_headers(ctx))
+
     if as_json:
         print_output(r, as_json)
-    else:
-        for entry in r.json():
-            ts = entry["created_at"]
-            action = entry["action"]
-            rtype = entry["record_type"]
-            name = entry["record_name"]
-            val = entry["record_value"]
+        return
 
-            if action == "edit" and entry.get("old_snapshot"):
-                old = json.loads(entry["old_snapshot"])
-                old_val = extract_value(old)
-                click.echo(f"{ts} | edit {rtype} {name} '{old_val}' -> '{val}'")
-            else:
-                click.echo(f"{ts} | {action} {rtype} {name} -> {val}")
+    for entry in r.json():
+        ts = entry.get("created_at")
+        action = entry.get("action")
+        rtype = entry.get("record_type")
+        name = entry.get("record_name")
+
+        current_display = format_dns_record_display(entry)
+
+        if action == "edit":
+            old_snapshot = parse_snapshot(entry.get("old_snapshot"))
+            old_display = format_dns_record_display(old_snapshot) if old_snapshot else "?"
+            click.echo(f"{ts} | edit {rtype} {name} | {old_display} -> {current_display}")
+        else:
+            click.echo(f"{ts} | {action} {rtype} {name} | {current_display}")
 
 @cli.command("logs-dnssec")
 @json_option()
@@ -1587,114 +1988,6 @@ def init(ctx, config, output, skip_agent_secret):
         click.echo(f"[ERROR] Failed to initialize: {e}")
         raise click.Abort()
     
-# legacy code
-'''
-@cli.command('init')
-@click.option('--config', '-c', type=click.Path(exists=True), default='dns_config.yaml', help="Path to dns_config.yaml")
-@click.option('--output', '-o', type=click.Path(), default=None, help="Path to save the generated zone JSON file")
-@requires_auth
-def init(ctx, config, output):
-    """
-    Initialize a vanilla JSON zone file with SOA, NS, and A records.
-    Registers the domain with the app backend.
-    """
-    import yaml
-    import json
-    from pathlib import Path
-    from datetime import datetime
-
-    with open(config) as f:
-        cfg = yaml.safe_load(f)
-
-    domain = cfg["domain"]
-    domain = domain.strip().lower() # normalize the domain name
-    primary_ns = cfg["primary_ns"]
-    nameservers = cfg["nameservers"]
-
-    # Build SOA string: nsX.domain. admin.domain. <serial> ...
-    soa_mname = f"{primary_ns}.{domain}."
-    soa_rname = f"admin.{domain}."
-    serial = datetime.utcnow().strftime("%Y%m%d01")  # e.g., 2026012601
-    soa_value = f"{soa_mname} {soa_rname} {serial} 7200 1800 1209600 3600"
-
-    records = [
-        {
-            "type": "SOA",
-            "name": "@",
-            "value": soa_value
-        }
-    ]
-
-    # Add NS and A records for all nameservers
-    for ns_name, ns_data in nameservers.items():
-        fqdn = f"{ns_name}.{domain}."
-        ip = ns_data["ip"]
-
-        records.append({
-            "type": "NS",
-            "name": "@",
-            "value": fqdn
-        })
-        records.append({
-            "type": "A",
-            "name": ns_name,
-            "value": ip
-        })
-
-    # Optional TXT record
-    records.append({
-        "type": "TXT",
-        "name": "@",
-        "value": "dnsproof init",
-        "ttl": 3600
-    })
-
-    zone_json = {
-        "domain": domain,
-        "records": records
-    }
-
-    # Determine output path
-    if output:
-        out_path = Path(output)
-    else:
-        out_path = Path(f"{domain}.json")
-
-    if out_path.exists():
-        click.echo(f"[WARNING] {domain}.json already exists at {out_path}")
-        if not click.confirm("Overwrite it?"):
-            click.echo("Aborted.")
-            return
-
-    try:
-        # Save local JSON zone file
-        with open(out_path, "w") as f:
-            json.dump(zone_json, f, indent=2)
-        click.echo(f"[INIT] Zone file initialized at: {out_path}")
-
-        # Register domain with backend
-        with open(config) as f:
-            cfg_text = f.read()
-
-        r = api_call(
-            httpx.post,
-            f"{API_URL}/api/dns/register-domain",
-            json={"domain": domain, "config_yaml": cfg_text},
-            headers=make_headers(ctx)
-        )
-        result = r.json()
-        status = result.get("status")
-
-        if status == "registered":
-            click.echo(f"[REGISTER] Domain registered with backend: {domain}")
-        elif status == "exists":
-            click.echo(f"[REGISTER] Domain already registered: {domain}")
-        else:
-            click.echo(f"[REGISTER] Unknown registration response: {result}")
-    except Exception as e:
-        click.echo(f"[ERROR] Failed to initialize: {e}")
-'''
-
 @cli.command("set-config")
 @click.option('--file', '-f', type=click.Path(exists=True), required=True, help="Path to dns_config.yaml")
 @requires_auth
@@ -2050,7 +2343,7 @@ def explain_policy(ctx, as_json, domain, audience, tone, dkim_selector, use_mock
     except Exception as e:
         click.echo(f"[ERROR] Failed to explain policy: {e}")
         raise click.Abort()
-    
+        
 @cli.command('devserver')
 def devserver():
     """Run the app backend with hot reload (for local development)."""

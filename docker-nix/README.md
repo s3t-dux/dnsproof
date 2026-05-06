@@ -48,6 +48,10 @@ APP_MASTER_KEY=changeme
 DNSPROOF_PASSWORD=changeme
 DB_PATH=/app/dnsproof.db
 ```
+Optional: override DB_PATH with a full SQLAlchemy database URL.
+```bash
+DATABASE_URL=postgresql+psycopg://dnsproof_user:password@127.0.0.1:5432/dnsproof
+```
 
 ### Makefile Support
 
